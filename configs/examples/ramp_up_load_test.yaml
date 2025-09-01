@@ -1,0 +1,41 @@
+suite: "load_testing"
+name: "Gradual Load Ramp-Up Test"
+description: "Test server behavior under gradually increasing load"
+tags: ["load_test", "ramp_up", "stability"]
+
+server:
+  model: "microsoft/DialoGPT-medium"  # Smaller model for load testing
+  tensor_parallel_size: 1
+  max_num_seqs: 64
+  gpu_memory_utilization: 0.8
+
+benchmark:
+  dataset_name: "random"
+  random_input_len: 512
+  random_output_len: 128
+  random_range_ratio: 0.2
+  num_prompts: 2000
+  
+  # Ramp-up configuration
+  ramp_up_strategy: "linear"
+  ramp_up_start_rps: 1
+  ramp_up_end_rps: 50
+  max_concurrency: 100
+  
+  temperature: 0.7  # More realistic sampling
+  percentile_metrics: "ttft,tpot,e2el"
+  goodput:
+    - "ttft:500"
+    - "e2el:10000"
+  
+  metadata:
+    - "test_type=load_ramp"
+    - "duration_target=long"
+
+system:
+  monitor_gpu: true
+  monitor_cpu: true
+  monitoring_interval: 2.0
+
+output_path: "results/ramp_up_load_test.json"
+timeout: 3600

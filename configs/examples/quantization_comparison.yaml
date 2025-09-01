@@ -1,0 +1,41 @@
+# Quantization method comparison
+
+suite: "quantization_analysis"
+name: "FP8 vs BF16 Performance Comparison"
+description: "Compare quantized vs full precision inference"
+tags: ["quantization", "memory", "efficiency"]
+
+server:
+  model: "meta-llama/Meta-Llama-3-8B"
+  dtype: "bfloat16"
+  tensor_parallel_size: 1
+  
+  # Quantization settings
+  quantization: "fp8"
+  kv_cache_dtype: "fp8_e4m3"
+  
+  # Memory settings
+  gpu_memory_utilization: 0.9
+  max_model_len: 8192
+  max_num_seqs: 128
+
+benchmark:
+  dataset_name: "sharegpt"
+  num_prompts: 500
+  request_rate: "inf"
+  temperature: 0.0
+  
+  percentile_metrics: "ttft,tpot"
+  metric_percentiles: "50,95,99"
+  
+  metadata:
+    - "quantization_method=fp8"
+    - "baseline_dtype=bfloat16"
+    - "memory_focus=true"
+
+system:
+  monitor_gpu: true
+  monitor_memory: true
+  monitoring_interval: 1.0
+
+output_path: "results/quantization_fp8.json"

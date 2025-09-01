@@ -1,0 +1,36 @@
+# Configuration for tensor parallel scaling analysis
+
+suite: "tensor_parallel_scaling"
+name: "Llama3-70B TP Scaling Analysis"
+description: "Analyze tensor parallel scaling from 1 to 8 GPUs"
+tags: ["scaling", "tensor_parallel", "70b", "performance"]
+
+server:
+  model: "meta-llama/Meta-Llama-3-70B"
+  dtype: "bfloat16"
+  tensor_parallel_size: 4  # Will be varied in actual experiments
+  gpu_memory_utilization: 0.95
+  max_model_len: 4096
+  max_num_seqs: 128
+  enable_prefix_caching: true
+  kv_cache_dtype: "fp8_e4m3"  # Memory optimization
+
+benchmark:
+  dataset_name: "sharegpt"
+  num_prompts: 500
+  request_rate: "inf"  # Maximum throughput test
+  temperature: 0.0
+  percentile_metrics: "ttft,tpot"
+  metric_percentiles: "50,95,99"
+  save_detailed: false  # Reduce output size
+  metadata:
+    - "test_type=scaling_analysis"
+    - "focus_metric=throughput"
+
+system:
+  monitor_gpu: true
+  monitoring_interval: 1.0
+  enable_profiling: false  # Disable for clean scaling measurements
+
+output_path: "results/tp_scaling_4gpu.json"
+timeout: 3600
