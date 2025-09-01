@@ -59,7 +59,7 @@ class VLLMServerManager:
             env['VLLM_TORCH_PROFILER_DIR'] = profile_dir
         
         # Start server process
-        cmd = ['python', '-m', 'vllm.entrypoints.openai.api_server'] + server_args
+        cmd = ['python3', '-m', 'vllm.entrypoints.openai.api_server'] + server_args
         
         logger.info(f"Starting vLLM server with command: {' '.join(cmd)}")
         
