@@ -1,0 +1,2 @@
+// Benchmark type definitions
+

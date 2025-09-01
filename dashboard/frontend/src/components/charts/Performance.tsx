@@ -1,0 +1,1 @@
+// Performance chart component
