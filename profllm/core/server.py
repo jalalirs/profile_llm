@@ -137,7 +137,7 @@ class VLLMServerManager:
             
             # CPU sampling options
             if self.system_config.nsight_sample:
-                nsys_cmd.extend(["--sample", self.system_config.nsight_sample])
+                nsys_cmd.extend(["--sample", str(self.system_config.nsight_sample)])
             
             # Note: --sampling-frequency is not a valid nsys option, using --sampling-period instead
             if self.system_config.nsight_sampling_frequency:
@@ -167,20 +167,8 @@ class VLLMServerManager:
             
             # CPU sampling and profiling
             # Note: CPU sampling is handled by the main --sampling-period option above
-            # The nsight_cpu_sample_rate is used to override the main sampling frequency if needed
-            if self.system_config.nsight_cpu_sample_rate and self.system_config.nsight_cpu_sample_rate != self.system_config.nsight_sampling_frequency:
-                # Convert CPU sample rate to period
-                cpu_period = int(1000000 / self.system_config.nsight_cpu_sample_rate)
-                cpu_period = max(125000, min(16000000, cpu_period))
-                # Update the main sampling period if CPU sampling rate is different
-                # Remove existing sampling-period and add new one
-                nsys_cmd = [arg for arg in nsys_cmd if not arg.startswith("--sampling-period")]
-                nsys_cmd.extend(["--sampling-period", str(cpu_period)])
-            
-            if self.system_config.nsight_cpu_sample_scope and self.system_config.nsight_cpu_sample_scope != self.system_config.nsight_sample:
-                # Update the main sample scope if CPU sample scope is different
-                nsys_cmd = [arg for arg in nsys_cmd if not arg.startswith("--sample")]
-                nsys_cmd.extend(["--sample", self.system_config.nsight_cpu_sample_scope])
+            # For now, we'll use the main sampling options and not override them
+            # This avoids complex list manipulation that might cause command parsing issues
             
             # CPU performance counters and profiling options
             # Note: Many of these options are not valid in nsys profile
@@ -227,6 +215,9 @@ class VLLMServerManager:
             logger.info(f"Nsight Systems profiling enabled")
             logger.info(f"Nsight output will be saved to: {nsight_output_path}")
             logger.info(f"Nsight command: {' '.join(nsys_cmd)}")
+            
+            # Debug: Log the final command to see what's being generated
+            logger.debug(f"Final command: {' '.join(cmd)}")
             
         elif profiling_enabled:
             # Torch profiler
