@@ -142,7 +142,10 @@ class VLLMServerManager:
             # Note: --sampling-frequency is not a valid nsys option, using --sampling-period instead
             if self.system_config.nsight_sampling_frequency:
                 # Convert frequency to period (period = 1/frequency * 1000000 for microseconds)
+                # nsys requires period between 125000 and 16000000
                 period = int(1000000 / self.system_config.nsight_sampling_frequency)
+                # Ensure period is within valid range
+                period = max(125000, min(16000000, period))
                 nsys_cmd.extend(["--sampling-period", str(period)])
             
             if self.system_config.nsight_cpu_core_events:

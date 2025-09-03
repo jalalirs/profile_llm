@@ -123,20 +123,20 @@ system:
   nsight_duration: 300  # Profile for 5 minutes (None = manual stop)
   
   # High verbosity Nsight options for comprehensive analysis
-  nsight_trace: "cuda"  # Enable CUDA API tracing (nccl is not a valid nsys trace option)
+  nsight_trace: "cuda,cudnn,mpi,osrt"  # Enable comprehensive tracing: CUDA, cuDNN, MPI, OS runtime
   nsight_cuda_trace_all_apis: true  # Trace all CUDA APIs (high overhead but comprehensive)
   nsight_cuda_memory_usage: true  # Track GPU memory usage by CUDA kernels
   nsight_cuda_backtrace: "all"  # Collect backtraces for all CUDA APIs
   nsight_cuda_flush_interval: 1000  # Flush CUDA buffers every 1 second
   nsight_sample: "process-tree"  # CPU sampling scope
-  nsight_sampling_frequency: 1000  # 1kHz sampling frequency (converted to period)
+  nsight_sampling_frequency: 8  # 8Hz sampling frequency (converted to period, results in 125000 period - minimum valid)
   nsight_cpu_core_events: "2"  # Instructions Retired (default)
   nsight_event_sample: "system-wide"  # Enable event sampling
   nsight_stats: true  # Generate summary statistics
   nsight_export: "text"  # Export additional text format
   
-  # Collective communication tracing (NCCL is not directly supported by nsys)
-  nsight_mpi_trace: false  # Enable MPI tracing for collective operations
+  # Additional tracing options (these are now included in nsight_trace above)
+  nsight_mpi_trace: true  # Enable MPI tracing for collective operations
   nsight_osrt_trace: true  # Enable OS runtime tracing for system calls
 
 # Export configuration
