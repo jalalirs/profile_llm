@@ -1,1 +1,0 @@
-// Comparison chart component

@@ -1,1 +1,0 @@
-// Data table component

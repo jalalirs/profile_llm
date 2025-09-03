@@ -1,1 +1,0 @@
-// Header layout component
