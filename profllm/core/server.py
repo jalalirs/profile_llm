@@ -97,8 +97,12 @@ class VLLMServerManager:
             nsight_output_path = Path(nsight_output_dir) / f"vllm_server_{int(time.time())}.nsys-rep"
             nsight_output_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Build nsys command
+            # Build nsys command with high verbosity options
             nsys_cmd = ["nsys", "profile", "-o", str(nsight_output_path)]
+            
+            # Basic tracing options
+            if self.system_config.nsight_trace:
+                nsys_cmd.extend(["--trace", self.system_config.nsight_trace])
             
             if self.system_config.nsight_trace_fork:
                 nsys_cmd.append("--trace-fork-before-exec=true")
@@ -106,6 +110,65 @@ class VLLMServerManager:
             if self.system_config.nsight_cuda_graph_trace:
                 nsys_cmd.extend(["--cuda-graph-trace", self.system_config.nsight_cuda_graph_trace])
             
+            # NCCL/Collective communication tracing
+            if self.system_config.nsight_nccl_trace and "nccl" not in self.system_config.nsight_trace:
+                # Add NCCL to trace if not already included
+                current_trace = self.system_config.nsight_trace
+                if current_trace and current_trace != "cuda":
+                    nsys_cmd.extend(["--trace", f"{current_trace},nccl"])
+                else:
+                    nsys_cmd.extend(["--trace", "cuda,nccl"])
+            
+            if self.system_config.nsight_mpi_trace and "mpi" not in self.system_config.nsight_trace:
+                # Add MPI to trace if not already included
+                current_trace = self.system_config.nsight_trace
+                if current_trace and current_trace != "cuda":
+                    nsys_cmd.extend(["--trace", f"{current_trace},mpi"])
+                else:
+                    nsys_cmd.extend(["--trace", "cuda,mpi"])
+            
+            if self.system_config.nsight_osrt_trace and "osrt" not in self.system_config.nsight_trace:
+                # Add OSRT to trace if not already included
+                current_trace = self.system_config.nsight_trace
+                if current_trace and current_trace != "cuda":
+                    nsys_cmd.extend(["--trace", f"{current_trace},osrt"])
+                else:
+                    nsys_cmd.extend(["--trace", "cuda,osrt"])
+            
+            # High verbosity CUDA tracing
+            if self.system_config.nsight_cuda_trace_all_apis:
+                nsys_cmd.append("--cuda-trace-all-apis=true")
+            
+            if self.system_config.nsight_cuda_memory_usage:
+                nsys_cmd.append("--cuda-memory-usage=true")
+            
+            if self.system_config.nsight_cuda_backtrace:
+                nsys_cmd.extend(["--cudabacktrace", self.system_config.nsight_cuda_backtrace])
+            
+            if self.system_config.nsight_cuda_flush_interval:
+                nsys_cmd.extend(["--cuda-flush-interval", str(self.system_config.nsight_cuda_flush_interval)])
+            
+            # CPU sampling options
+            if self.system_config.nsight_sample:
+                nsys_cmd.extend(["--sample", self.system_config.nsight_sample])
+            
+            if self.system_config.nsight_sampling_frequency:
+                nsys_cmd.extend(["--sampling-frequency", str(self.system_config.nsight_sampling_frequency)])
+            
+            if self.system_config.nsight_cpu_core_events:
+                nsys_cmd.extend(["--cpu-core-events", self.system_config.nsight_cpu_core_events])
+            
+            if self.system_config.nsight_event_sample:
+                nsys_cmd.extend(["--event-sample", self.system_config.nsight_event_sample])
+            
+            # Output options
+            if self.system_config.nsight_stats:
+                nsys_cmd.append("--stats=true")
+            
+            if self.system_config.nsight_export:
+                nsys_cmd.extend(["--export", self.system_config.nsight_export])
+            
+            # Timing options
             if self.system_config.nsight_delay is not None:
                 nsys_cmd.extend(["--delay", str(self.system_config.nsight_delay)])
             

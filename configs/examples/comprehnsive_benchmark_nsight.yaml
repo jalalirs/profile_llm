@@ -44,6 +44,24 @@ system:
   nsight_cuda_graph_trace: "node"
   nsight_delay: 30  # Wait 30 seconds before starting profiling
   nsight_duration: 120  # Profile for 2 minutes (None = manual stop)
+  
+  # High verbosity Nsight options for comprehensive analysis
+  nsight_trace: "cuda,nccl"  # Enable CUDA API and NCCL tracing for AllReduce/AllGather
+  nsight_cuda_trace_all_apis: true  # Trace all CUDA APIs (high overhead but comprehensive)
+  nsight_cuda_memory_usage: true  # Track GPU memory usage by CUDA kernels
+  nsight_cuda_backtrace: "all"  # Collect backtraces for all CUDA APIs
+  nsight_cuda_flush_interval: 1000  # Flush CUDA buffers every 1 second
+  nsight_sample: "process-tree"  # CPU sampling scope
+  nsight_sampling_frequency: 1000  # 1kHz sampling frequency
+  nsight_cpu_core_events: "2"  # Instructions Retired (default)
+  nsight_event_sample: "system-wide"  # Enable event sampling
+  nsight_stats: true  # Generate summary statistics
+  nsight_export: "text"  # Export additional text format
+  
+  # NCCL/Collective communication tracing for AllReduce/AllGather
+  nsight_nccl_trace: true  # Enable NCCL tracing for AllReduce/AllGather
+  nsight_mpi_trace: false  # Enable MPI tracing (alternative to NCCL)
+  nsight_osrt_trace: true  # Enable OS runtime tracing for system calls
 
 # Export Configuration
 export:
