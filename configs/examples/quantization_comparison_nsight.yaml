@@ -1,0 +1,148 @@
+# Comprehensive benchmark configuration with NVIDIA Nsight Systems profiling
+
+suite: "quantization_analysis_nsight"
+name: "FP8 vs BF16 Performance Comparison with Nsight Profiling"
+description: "Compare quantized vs full precision inference with detailed CUDA profiling"
+tags: ["quantization", "memory", "efficiency", "nsight", "cuda", "profiling"]
+
+# Server Configuration - covers key vLLM parameters
+server:
+  # Model settings
+  model: "meta-llama/Meta-Llama-3-8B"
+  dtype: "bfloat16"
+  trust_remote_code: false
+
+  # Quantization settings
+  quantization: "fp8"
+  kv_cache_dtype: "fp8_e4m3"
+  
+  # Parallel processing
+  tensor_parallel_size: 2
+  pipeline_parallel_size: 1
+  data_parallel_size: 1
+  
+  # Memory and caching
+  gpu_memory_utilization: 0.9
+  kv_cache_dtype: "auto"
+  enable_prefix_caching: true
+  block_size: 16
+  swap_space: 4
+  
+  # Model length and batching
+  max_model_len: 4096
+  max_num_seqs: 64
+  max_num_batched_tokens: null  # Auto-calculated
+  
+  # Scheduling optimizations
+  # enable_chunked_prefill: true
+  # max_num_partial_prefills: 4
+  # long_prefill_token_threshold: 1024
+  #preemption_mode: "recompute"
+  scheduling_policy: "fcfs"
+  
+  # Performance features
+  enforce_eager: false
+  max_seq_len_to_capture: 8192
+  disable_custom_all_reduce: false
+  
+  # Server connection
+  host: "127.0.0.1"
+  port: null  # Auto-assigned
+
+# Benchmark Configuration
+benchmark:
+  # Backend and connection
+  backend: "vllm"
+  endpoint: "/v1/completions"
+  
+  # Dataset configuration
+  dataset_name: "sharegpt"
+  dataset_path: null  # Use default ShareGPT dataset
+  num_prompts: 5
+  sharegpt_output_len: 256  # Override default output length
+  
+  # Traffic pattern - moderate load with some burstiness
+  request_rate: 10.0  # 10 requests per second
+  burstiness: 0.8  # Slightly bursty (< 1.0)
+  max_concurrency: 32
+  
+  # Sampling parameters (for consistent results)
+  temperature: 0.0  # Greedy decoding
+  top_p: 1.0
+  top_k: -1
+  min_p: 0.0
+  
+  # Request configuration
+  use_beam_search: false
+  logprobs: null
+  ignore_eos: false
+  
+  # Metrics and analysis
+  percentile_metrics: "ttft,tpot,itl,e2el"
+  metric_percentiles: "50,90,95,99"
+  goodput:
+    - "ttft:200"    # 200ms TTFT SLO
+    - "tpot:50"     # 50ms TPOT SLO
+    - "e2el:5000"   # 5 second end-to-end SLO
+  
+  # Result management
+  save_result: true
+  save_detailed: true
+  result_dir: "results"
+  result_filename: null  # Auto-generated
+  metadata:
+    - "experiment_version=1.0"
+    - "hardware_config=2xH100"
+    - "optimization_level=production"
+    - "profiling_method=nsight_systems"
+  
+  # Behavior
+  seed: 42
+  trust_remote_code: false
+  disable_tqdm: false
+  profile: true  # This will be automatically disabled when Nsight is enabled
+  request_id_prefix: "profllm-quantization-nsight"
+
+# System monitoring and profiling
+system:
+  # Resource monitoring
+  monitor_gpu: true
+  monitor_cpu: true
+  monitor_memory: true
+  monitoring_interval: 0.5  # High frequency monitoring
+  
+  # Disable torch profiler when using Nsight
+  enable_profiling: false
+  
+  # Nsight Systems profiling configuration
+  enable_nsight: true
+  nsight_output_dir: "nsight_traces"  # Will be created as results/{run_id}/nsight_traces/
+  nsight_trace_fork: true
+  nsight_cuda_graph_trace: "node"
+  nsight_delay: 60  # Wait 60 seconds before starting profiling (model loading time)
+  nsight_duration: 300  # Profile for 5 minutes (None = manual stop)
+
+# Export configuration
+export:
+  enable_export: true
+  export_csv: true
+  export_influxdb: false
+  export_dir: "exports"
+  csv_summary: true
+  csv_requests: true
+  csv_system: true
+  
+  # Performance optimizations
+  use_streaming_export: false  # Enable for datasets > 10k requests
+  csv_chunk_size: 1000  # Chunk size for streaming
+  enable_fieldname_caching: true  # Cache fieldnames for performance
+  
+  use_timestamp_suffix: true
+  timestamp_format: "%Y%m%d_%H%M%S"
+
+# Output and execution
+output_path: "results/quantization_comparison_nsight.json"
+save_traces: true
+timeout: 7200  # 2 hours
+max_retries: 3
+dry_run: false
