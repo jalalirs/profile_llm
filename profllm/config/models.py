@@ -6,6 +6,10 @@ import json
 class ServerConfig(BaseModel):
     """Configuration for vLLM server parameters - covers all 150+ vLLM engine args"""
     
+    # Run identification for profiling
+    run_id: Optional[str] = None
+    experiment_profile_dir: Optional[str] = None
+    
     # ModelConfig
     model: str = Field(default="meta-llama/Meta-Llama-3-8B", description="Model name or path")
     runner: Optional[Literal["auto", "draft", "generate", "pooling"]] = Field(default="auto")
@@ -26,7 +30,6 @@ class ServerConfig(BaseModel):
     max_model_len: Optional[int] = None
     quantization: Optional[str] = None
     enforce_eager: bool = False
-    max_seq_len_to_capture: int = 8192
     max_logprobs: int = 20
     logprobs_mode: str = "raw_logprobs"
     disable_sliding_window: bool = False
@@ -65,15 +68,15 @@ class ServerConfig(BaseModel):
     
     # ParallelConfig
     distributed_executor_backend: Optional[Literal["external_launcher", "mp", "ray", "uni"]] = None
-    pipeline_parallel_size: int = Field(default=1, alias="pp")
-    tensor_parallel_size: int = Field(default=1, alias="tp")
-    data_parallel_size: int = Field(default=1, alias="dp")
-    data_parallel_rank: Optional[int] = Field(default=None, alias="dpn")
-    data_parallel_start_rank: Optional[int] = Field(default=None, alias="dpr")
-    data_parallel_size_local: Optional[int] = Field(default=None, alias="dpl")
-    data_parallel_address: Optional[str] = Field(default=None, alias="dpa")
-    data_parallel_rpc_port: Optional[int] = Field(default=None, alias="dpp")
-    data_parallel_backend: Literal["mp", "ray"] = Field(default="mp", alias="dpb")
+    pipeline_parallel_size: int = Field(default=1)
+    tensor_parallel_size: int
+    data_parallel_size: int = Field(default=1)
+    data_parallel_rank: Optional[int] = Field(default=None)
+    data_parallel_start_rank: Optional[int] = Field(default=None)
+    data_parallel_size_local: Optional[int] = Field(default=None)
+    data_parallel_address: Optional[str] = Field(default=None)
+    data_parallel_rpc_port: Optional[int] = Field(default=None)
+    data_parallel_backend: Literal["mp", "ray"] = Field(default="mp")
     data_parallel_hybrid_lb: bool = False
     enable_expert_parallel: bool = False
     enable_eplb: bool = False
@@ -128,19 +131,23 @@ class ServerConfig(BaseModel):
     # SchedulerConfig
     max_num_batched_tokens: Optional[int] = None
     max_num_seqs: Optional[int] = None
-    max_num_partial_prefills: int = 1
-    max_long_partial_prefills: int = 1
     cuda_graph_sizes: List[int] = Field(default_factory=list)
-    long_prefill_token_threshold: int = 0
     num_lookahead_slots: int = 0
     scheduler_delay_factor: float = 0.0
-    preemption_mode: Optional[Literal["recompute", "swap"]] = None
+    #preemption_mode: Optional[Literal["recompute", "swap"]] = None
     scheduling_policy: Literal["fcfs", "priority"] = "fcfs"
-    enable_chunked_prefill: Optional[bool] = None
     disable_chunked_mm_input: bool = False
     scheduler_cls: str = "vllm.core.scheduler.Scheduler"
     disable_hybrid_kv_cache_manager: bool = False
     async_scheduling: bool = False
+    
+    # Prefill optimizations
+    #enable_chunked_prefill: bool = False
+    #max_num_partial_prefills: int = 4
+    #long_prefill_token_threshold: int = 1024
+    
+    # Performance features
+    max_seq_len_to_capture: Optional[int] = None
     
     # VllmConfig
     speculative_config: Optional[Dict[str, Any]] = None
@@ -191,18 +198,25 @@ class ServerConfig(BaseModel):
 class BenchmarkConfig(BaseModel):
     """Configuration for benchmark execution"""
     
+    # Backend and connection
+    backend: str = "vllm"
+    endpoint: str = "/v1/completions"
+    
     # Dataset configuration
     dataset_name: str = "sharegpt"
     dataset_path: Optional[str] = None
     num_prompts: int = 1000
+    sharegpt_output_len: int = 256  # Override default output length
     
     # Request patterns
     request_rate: Union[float, str] = "inf"  # requests per second or "inf" for unlimited
+    burstiness: float = 1.0  # Traffic burstiness factor
     max_concurrency: Optional[int] = None
     
     # Benchmark behavior
     seed: int = 0
     save_result: bool = True
+    save_detailed: bool = False  # Save detailed request-level results
     trust_remote_code: bool = False
     disable_tqdm: bool = False
     profile: bool = False
@@ -221,7 +235,19 @@ class BenchmarkConfig(BaseModel):
     temperature: float = 0.0
     top_p: float = 1.0
     top_k: int = -1
+    min_p: float = 0.0
     ignore_eos: bool = False
+    
+    # Metrics and analysis
+    percentile_metrics: str = "ttft,tpot"  # Comma-separated metrics for percentile analysis
+    metric_percentiles: str = "50,90,95,99"  # Comma-separated percentiles
+    goodput: Optional[List[str]] = None  # List of SLO definitions like ["ttft:200", "tpot:50"]
+    
+    # Result management
+    metadata: Optional[List[str]] = None  # List of metadata key-value pairs
+    
+    # Behavior
+    request_id_prefix: Optional[str] = None  # Prefix for request IDs
     
     # Additional benchmark args
     extra_body: Optional[Dict[str, Any]] = Field(default_factory=dict)
@@ -265,6 +291,33 @@ class SystemConfig(BaseModel):
     gpu_devices: Optional[List[int]] = None  # If None, will auto-detect
     cuda_visible_devices: Optional[str] = None
 
+class ExportConfig(BaseModel):
+    """Configuration for exporting results to various formats"""
+    
+    # Enable/disable export
+    enable_export: bool = True
+    
+    # Export formats
+    export_csv: bool = True
+    export_influxdb: bool = False
+    
+    # Export directory (relative to results directory)
+    export_dir: str = "exports"
+    
+    # CSV export options
+    csv_summary: bool = True
+    csv_requests: bool = True
+    csv_system: bool = True
+    
+    # Performance optimizations
+    use_streaming_export: bool = False  # Use streaming for very large datasets
+    csv_chunk_size: int = 1000  # Chunk size for streaming export
+    enable_fieldname_caching: bool = True  # Cache fieldnames for repeated exports
+    
+    # File naming
+    use_timestamp_suffix: bool = True
+    timestamp_format: str = "%Y%m%d_%H%M%S"
+
 class ExperimentConfig(BaseModel):
     """Complete experiment configuration"""
     
@@ -275,13 +328,16 @@ class ExperimentConfig(BaseModel):
     tags: List[str] = Field(default_factory=list)
     
     # Core configurations
-    server: ServerConfig = Field(default_factory=ServerConfig)
-    benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
-    system: SystemConfig = Field(default_factory=SystemConfig)
+    server: ServerConfig
+    benchmark: BenchmarkConfig
+    system: SystemConfig
     
     # Output configuration
     output_path: Optional[str] = None
     save_traces: bool = True
+    
+    # Export configuration
+    export: ExportConfig
     
     # Validation and safety
     dry_run: bool = False
@@ -294,6 +350,23 @@ class ExperimentConfig(BaseModel):
         import yaml
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
+        
+        # Debug: Log the raw YAML data
+        print(f"DEBUG: Raw YAML data: {data}")
+        if 'server' in data:
+            print(f"DEBUG: Server data from YAML: {data['server']}")
+        
+        # Explicitly create nested configs to avoid default value issues
+        if 'server' in data:
+            data['server'] = ServerConfig(**data['server'])
+            print(f"DEBUG: ServerConfig created with tensor_parallel_size: {data['server'].tensor_parallel_size}")
+        if 'benchmark' in data:
+            data['benchmark'] = BenchmarkConfig(**data['benchmark'])
+        if 'system' in data:
+            data['system'] = SystemConfig(**data['system'])
+        if 'export' in data:
+            data['export'] = ExportConfig(**data['export'])
+            
         return cls(**data)
     
     @classmethod 

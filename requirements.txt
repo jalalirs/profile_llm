@@ -1,1 +1,10 @@
 # Dependencies for ProfileLLM
+pandas
+click
+rich
+PyYAML
+datasets
+requests
+numpy
+tqdm
+transformers

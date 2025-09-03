@@ -45,6 +45,15 @@ class VLLMServerManager:
         # Set up environment variables
         env = os.environ.copy()
         
+        # Ensure we have a clean environment copy
+        logger.info(f"Base environment has {len(env)} variables")
+        
+        # Set Hugging Face cache directory
+        hf_cache_dir = "/workspace/models"
+        env['HF_HOME'] = hf_cache_dir
+        env['TRANSFORMERS_CACHE'] = hf_cache_dir
+        env['HF_DATASETS_CACHE'] = hf_cache_dir
+        
         # GPU device allocation
         if hasattr(self.config, 'gpu_devices') and self.config.gpu_devices:
             env['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, self.config.gpu_devices))
@@ -126,23 +135,65 @@ class VLLMServerManager:
             cmd = ["python3", "-m", "vllm.entrypoints.openai.api_server"] + server_args
         
         logger.info(f"Starting vLLM server with command: {' '.join(cmd)}")
+        logger.info(f"Working directory: {os.getcwd()}")
+        logger.info(f"Environment variables count: {len(env)}")
+        
+        # Debug: Log profiling setup
+        if 'VLLM_TORCH_PROFILER_DIR' in env:
+            logger.info(f"Profiling environment variable VLLM_TORCH_PROFILER_DIR={env['VLLM_TORCH_PROFILER_DIR']} is set")
+        
+        # Debug: Check if vLLM module is available
+        try:
+            import vllm
+            logger.info(f"vLLM module found: {vllm.__file__}")
+        except ImportError as e:
+            logger.error(f"vLLM module not found: {e}")
+            raise RuntimeError("vLLM module not available")
         
         try:
+            # Use shell=False for better environment variable inheritance
+            logger.info("Creating subprocess...")
             self.process = subprocess.Popen(
                 cmd,
+                shell=False,
                 env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
+                stdout=subprocess.DEVNULL,  # Don't capture stdout
+                stderr=subprocess.DEVNULL,  # Don't capture stderr
             )
             
-            logger.info(f"vLLM server started with PID {self.process.pid}")
+            logger.info(f"Subprocess created successfully with PID {self.process.pid}")
             logger.info(f"Server will be available at {self.base_url}")
+            
+            # Debug: Verify environment variable is set in subprocess
+            if 'VLLM_TORCH_PROFILER_DIR' in env:
+                logger.info(f"✓ Environment variable VLLM_TORCH_PROFILER_DIR={env['VLLM_TORCH_PROFILER_DIR']} is set for subprocess")
+            else:
+                logger.warning("⚠ VLLM_TORCH_PROFILER_DIR not set - profiling will not work")
+            
+            # Update config with actual port
+            self.config.port = self.port
+            
+            # Verify process was created
+            if self.process is None:
+                raise RuntimeError("Failed to create subprocess - process is None")
+            
+            # Give the process more time to start up before checking
+            logger.info("Waiting for vLLM server process to stabilize...")
+            await asyncio.sleep(2.0)  # Give it 2 seconds to start up
+            
+            # Now check if it's still running
+            if self.process.poll() is not None:
+                # Process died during startup
+                error_msg = f"vLLM server process died during startup with exit code {self.process.returncode}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+            
+            logger.info("✓ vLLM server process is stable and running")
             
         except Exception as e:
             logger.error(f"Failed to start vLLM server: {str(e)}")
+            # Ensure process is None on failure
+            self.process = None
             raise
         
         return self.base_url
@@ -153,6 +204,9 @@ class VLLMServerManager:
         
         # Convert config to vLLM args
         vllm_args = get_vllm_server_args(self.config)
+        
+        # Debug: Log the vLLM args
+        print(f"DEBUG: vLLM args from config: {vllm_args}")
         
         for key, value in vllm_args.items():
             if isinstance(value, bool):
@@ -177,14 +231,19 @@ class VLLMServerManager:
         """Wait for server to be ready to accept requests"""
         logger.info("Waiting for vLLM server to be ready...")
         
+        # Check if process was created
+        if self.process is None:
+            raise RuntimeError("Cannot wait for server - no process was created")
+        
         start_time = time.time()
         last_error = None
         
         while time.time() - start_time < timeout:
             # Check if process is still running
             if self.process.poll() is not None:
-                stdout, stderr = self.process.communicate()
-                raise RuntimeError(f"vLLM server process died. STDOUT: {stdout}, STDERR: {stderr}")
+                # Since we're not capturing stdout/stderr, just report the exit code
+                exit_code = self.process.returncode
+                raise RuntimeError(f"vLLM server process died with exit code {exit_code}")
             
             try:
                 # Try to connect to health endpoint

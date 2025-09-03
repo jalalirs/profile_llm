@@ -30,10 +30,10 @@ server:
   max_num_batched_tokens: null  # Auto-calculated
   
   # Scheduling optimizations
-  enable_chunked_prefill: true
-  max_num_partial_prefills: 4
-  long_prefill_token_threshold: 1024
-  preemption_mode: "recompute"
+  # enable_chunked_prefill: true
+  # max_num_partial_prefills: 4
+  # long_prefill_token_threshold: 1024
+  #preemption_mode: "recompute"
   scheduling_policy: "fcfs"
   
   # Performance features
@@ -54,7 +54,7 @@ benchmark:
   # Dataset configuration
   dataset_name: "sharegpt"
   dataset_path: null  # Use default ShareGPT dataset
-  num_prompts: 1000
+  num_prompts: 5
   sharegpt_output_len: 256  # Override default output length
   
   # Traffic pattern - moderate load with some burstiness
@@ -108,11 +108,29 @@ system:
   
   # Profiling configuration
   enable_profiling: true
-  profile_dir: "/mnt/traces"
+  profile_dir: "profiling"  # Will be created as results/{run_id}/profiling/
   profile_activities: ["cpu", "cuda"]
   profile_record_shapes: true
   profile_profile_memory: true
   profile_with_stack: true
+
+# Export configuration
+export:
+  enable_export: true
+  export_csv: true
+  export_influxdb: false
+  export_dir: "exports"
+  csv_summary: true
+  csv_requests: true
+  csv_system: true
+  
+  # Performance optimizations
+  use_streaming_export: false  # Enable for datasets > 10k requests
+  csv_chunk_size: 1000  # Chunk size for streaming
+  enable_fieldname_caching: true  # Cache fieldnames for performance
+  
+  use_timestamp_suffix: true
+  timestamp_format: "%Y%m%d_%H%M%S"
 
 # Output and execution
 output_path: "results/comprehensive_benchmark.json"

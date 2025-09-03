@@ -1,41 +1,144 @@
-# Quantization method comparison
+# Comprehensive benchmark configuration showcasing most ProfLLM features
 
 suite: "quantization_analysis"
 name: "FP8 vs BF16 Performance Comparison"
 description: "Compare quantized vs full precision inference"
 tags: ["quantization", "memory", "efficiency"]
 
+# Server Configuration - covers key vLLM parameters
 server:
+  # Model settings
   model: "meta-llama/Meta-Llama-3-8B"
   dtype: "bfloat16"
-  tensor_parallel_size: 1
-  
+  trust_remote_code: false
+
   # Quantization settings
   quantization: "fp8"
   kv_cache_dtype: "fp8_e4m3"
   
-  # Memory settings
+  # Parallel processing
+  tensor_parallel_size: 2
+  pipeline_parallel_size: 1
+  data_parallel_size: 1
+  
+  # Memory and caching
   gpu_memory_utilization: 0.9
-  max_model_len: 8192
-  max_num_seqs: 128
+  kv_cache_dtype: "auto"
+  enable_prefix_caching: true
+  block_size: 16
+  swap_space: 4
+  
+  # Model length and batching
+  max_model_len: 4096
+  max_num_seqs: 64
+  max_num_batched_tokens: null  # Auto-calculated
+  
+  # Scheduling optimizations
+  # enable_chunked_prefill: true
+  # max_num_partial_prefills: 4
+  # long_prefill_token_threshold: 1024
+  #preemption_mode: "recompute"
+  scheduling_policy: "fcfs"
+  
+  # Performance features
+  enforce_eager: false
+  max_seq_len_to_capture: 8192
+  disable_custom_all_reduce: false
+  
+  # Server connection
+  host: "127.0.0.1"
+  port: null  # Auto-assigned
 
+# Benchmark Configuration
 benchmark:
+  # Backend and connection
+  backend: "vllm"
+  endpoint: "/v1/completions"
+  
+  # Dataset configuration
   dataset_name: "sharegpt"
-  num_prompts: 500
-  request_rate: "inf"
-  temperature: 0.0
+  dataset_path: null  # Use default ShareGPT dataset
+  num_prompts: 5
+  sharegpt_output_len: 256  # Override default output length
   
-  percentile_metrics: "ttft,tpot"
-  metric_percentiles: "50,95,99"
+  # Traffic pattern - moderate load with some burstiness
+  request_rate: 10.0  # 10 requests per second
+  burstiness: 0.8  # Slightly bursty (< 1.0)
+  max_concurrency: 32
   
+  # Sampling parameters (for consistent results)
+  temperature: 0.0  # Greedy decoding
+  top_p: 1.0
+  top_k: -1
+  min_p: 0.0
+  
+  # Request configuration
+  use_beam_search: false
+  logprobs: null
+  ignore_eos: false
+  
+  # Metrics and analysis
+  percentile_metrics: "ttft,tpot,itl,e2el"
+  metric_percentiles: "50,90,95,99"
+  goodput:
+    - "ttft:200"    # 200ms TTFT SLO
+    - "tpot:50"     # 50ms TPOT SLO
+    - "e2el:5000"   # 5 second end-to-end SLO
+  
+  # Result management
+  save_result: true
+  save_detailed: true
+  result_dir: "results"
+  result_filename: null  # Auto-generated
   metadata:
-    - "quantization_method=fp8"
-    - "baseline_dtype=bfloat16"
-    - "memory_focus=true"
+    - "experiment_version=1.0"
+    - "hardware_config=2xH100"
+    - "optimization_level=production"
+  
+  # Behavior
+  seed: 42
+  trust_remote_code: false
+  disable_tqdm: false
+  profile: true
+  request_id_prefix: "profllm-comprehensive"
 
+# System monitoring and profiling
 system:
+  # Resource monitoring
   monitor_gpu: true
+  monitor_cpu: true
   monitor_memory: true
-  monitoring_interval: 1.0
+  monitoring_interval: 0.5  # High frequency monitoring
+  
+  # Profiling configuration
+  enable_profiling: true
+  profile_dir: "profiling"  # Will be created as results/{run_id}/profiling/
+  profile_activities: ["cpu", "cuda"]
+  profile_record_shapes: true
+  profile_profile_memory: true
+  profile_with_stack: true
 
-output_path: "results/quantization_fp8.json"
+# Export configuration
+export:
+  enable_export: true
+  export_csv: true
+  export_influxdb: false
+  export_dir: "exports"
+  csv_summary: true
+  csv_requests: true
+  csv_system: true
+  
+  # Performance optimizations
+  use_streaming_export: false  # Enable for datasets > 10k requests
+  csv_chunk_size: 1000  # Chunk size for streaming
+  enable_fieldname_caching: true  # Cache fieldnames for performance
+  
+  use_timestamp_suffix: true
+  timestamp_format: "%Y%m%d_%H%M%S"
+
+# Output and execution
+output_path: "results/comprehensive_benchmark.json"
+save_traces: true
+timeout: 7200  # 2 hours
+max_retries: 3
+dry_run: false
