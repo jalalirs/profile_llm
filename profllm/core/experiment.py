@@ -154,7 +154,7 @@ class Experiment:
     async def _initialize_components(self):
         """Initialize experiment components"""
         # Server manager
-        self.server_manager = VLLMServerManager(self.config.server)
+        self.server_manager = VLLMServerManager(self.config.server, self.config.system)
         
         # System metrics
         if self.config.system.monitor_gpu or self.config.system.monitor_cpu:
@@ -163,7 +163,8 @@ class Experiment:
         # Benchmark client (will be initialized after server starts)
         self.benchmark_client = BenchmarkClient(
             self.config.benchmark,
-            server_config=self.config.server
+            server_config=self.config.server,
+            system_config=self.config.system
         )
     
     async def _collect_profiling_data(self) -> Dict[str, Any]:

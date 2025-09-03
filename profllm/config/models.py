@@ -253,6 +253,14 @@ class SystemConfig(BaseModel):
     profile_profile_memory: bool = True
     profile_with_stack: bool = True
     
+    # Nsight Systems profiling
+    enable_nsight: bool = False
+    nsight_output_dir: Optional[str] = None
+    nsight_trace_fork: bool = True
+    nsight_cuda_graph_trace: str = "node"
+    nsight_delay: Optional[int] = None  # seconds to wait before starting profiling
+    nsight_duration: Optional[int] = None  # seconds to profile (None = manual stop)
+    
     # GPU management
     gpu_devices: Optional[List[int]] = None  # If None, will auto-detect
     cuda_visible_devices: Optional[str] = None

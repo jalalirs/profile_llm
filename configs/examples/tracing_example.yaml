@@ -1,0 +1,59 @@
+# Example configuration demonstrating tracing and profiling
+suite: "tracing_demo"
+name: "Tracing Demo Benchmark"
+description: "Demonstrates torch.profiler integration with organized trace files"
+tags: ["demo", "tracing", "profiling", "torch.profiler"]
+
+# Server Configuration
+server:
+  model: "meta-llama/Meta-Llama-3-8B"
+  dtype: "bfloat16"
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.8
+  max_model_len: 2048
+  host: "127.0.0.1"
+  port: null  # Auto-assigned
+
+# Benchmark Configuration
+benchmark:
+  backend: "vllm"
+  endpoint: "/v1/completions"
+  dataset_name: "sharegpt"
+  num_prompts: 50  # Small number for profiling demo
+  max_concurrency: 4
+  temperature: 0.0
+  max_tokens: 64
+  profile: true  # Enable benchmark profiling
+  save_result: true
+  save_detailed: true
+
+# System Configuration with Profiling
+system:
+  monitor_gpu: true
+  monitor_cpu: true
+  monitor_memory: true
+  monitoring_interval: 1.0
+  
+  # Profiling Configuration
+  enable_profiling: true
+  profile_dir: "profiling"  # Will be created as results/{run_id}/profiling/
+  profile_activities: ["cpu", "cuda"]
+  profile_record_shapes: true
+  profile_profile_memory: true
+  profile_with_stack: true
+
+# Export Configuration
+export:
+  enable_export: true
+  export_csv: true
+  export_influxdb: false
+  export_dir: "exports"
+  csv_summary: true
+  csv_requests: true
+  csv_system: true
+
+# Output Configuration
+output_path: "results/tracing_demo.json"
+timeout: 1800  # 30 minutes
+max_retries: 2
+dry_run: false

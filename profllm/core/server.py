@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from ..config.models import ServerConfig
+from ..config.models import ServerConfig, SystemConfig
 from ..config.validation import get_vllm_server_args
 from ..utils.ports import find_free_port
 from ..utils.gpu import allocate_gpu_devices
@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 class VLLMServerManager:
     """Manages vLLM server lifecycle"""
     
-    def __init__(self, config: ServerConfig):
+    def __init__(self, config: ServerConfig, system_config: Optional[SystemConfig] = None):
         self.config = config
+        self.system_config = system_config
         self.process: Optional[subprocess.Popen] = None
         self.port: Optional[int] = None
         self.base_url: Optional[str] = None
@@ -52,14 +53,77 @@ class VLLMServerManager:
             gpu_devices = await allocate_gpu_devices(self.config.tensor_parallel_size)
             env['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, gpu_devices))
         
-        # Profiling environment
-        if hasattr(self.config, 'enable_profiling') and self.config.enable_profiling:
-            profile_dir = getattr(self.config, 'profile_dir', '/tmp/profllm_traces')
-            Path(profile_dir).mkdir(parents=True, exist_ok=True)
-            env['VLLM_TORCH_PROFILER_DIR'] = profile_dir
+        # Profiling environment - enable if configured or if experiment profile dir is set
+        profiling_enabled = False
+        nsight_enabled = False
         
-        # Start server process
-        cmd = ['python3', '-m', 'vllm.entrypoints.openai.api_server'] + server_args
+        if self.system_config:
+            profiling_enabled = self.system_config.enable_profiling
+            nsight_enabled = self.system_config.enable_nsight
+        elif (hasattr(self.config, 'enable_profiling') and self.config.enable_profiling) or \
+             (hasattr(self.config, 'experiment_profile_dir') and self.config.experiment_profile_dir):
+            profiling_enabled = True
+        
+        if profiling_enabled and not nsight_enabled:
+            # Use experiment-specific profiling directory
+            if hasattr(self.config, 'experiment_profile_dir') and self.config.experiment_profile_dir:
+                profile_dir = Path(self.config.experiment_profile_dir)
+            else:
+                # Fallback to global directory
+                profile_dir = Path(self.config.profile_dir or '/tmp/profllm_traces')
+            
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Set environment variable for subprocess
+            env['VLLM_TORCH_PROFILER_DIR'] = str(profile_dir)
+            
+            # Debug: Log the profiling directory being set
+            logger.info(f"Torch profiling enabled, traces will be saved to: {profile_dir}")
+            logger.info(f"vLLM will automatically generate traces when --profile flag is used in benchmark")
+        
+        # Build command based on profiling configuration
+        if nsight_enabled:
+            # Nsight Systems profiling
+            nsight_output_dir = self.system_config.nsight_output_dir or '/tmp/profllm_nsight'
+            nsight_output_path = Path(nsight_output_dir) / f"vllm_server_{int(time.time())}.nsys-rep"
+            nsight_output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Build nsys command
+            nsys_cmd = ["nsys", "profile", "-o", str(nsight_output_path)]
+            
+            if self.system_config.nsight_trace_fork:
+                nsys_cmd.append("--trace-fork-before-exec=true")
+            
+            if self.system_config.nsight_cuda_graph_trace:
+                nsys_cmd.extend(["--cuda-graph-trace", self.system_config.nsight_cuda_graph_trace])
+            
+            if self.system_config.nsight_delay is not None:
+                nsys_cmd.extend(["--delay", str(self.system_config.nsight_delay)])
+            
+            if self.system_config.nsight_duration is not None:
+                nsys_cmd.extend(["--duration", str(self.system_config.nsight_duration)])
+            
+            # Add the vLLM command
+            vllm_cmd = ["python3", "-m", "vllm.entrypoints.openai.api_server"] + server_args
+            cmd = nsys_cmd + vllm_cmd
+            
+            logger.info(f"Nsight Systems profiling enabled")
+            logger.info(f"Nsight output will be saved to: {nsight_output_path}")
+            logger.info(f"Nsight command: {' '.join(nsys_cmd)}")
+            
+        elif profiling_enabled:
+            # Torch profiler
+            profile_dir = Path(self.config.experiment_profile_dir) if hasattr(self.config, 'experiment_profile_dir') and self.config.experiment_profile_dir else Path(self.config.profile_dir or '/tmp/profllm_traces')
+            # Resolve to absolute path
+            profile_dir = profile_dir.resolve()
+            # Use shell=False but ensure env var is in env dict for proper inheritance
+            cmd = ["python3", "-m", "vllm.entrypoints.openai.api_server"] + server_args
+            env['VLLM_TORCH_PROFILER_DIR'] = str(profile_dir)
+            logger.info(f"Torch profiling enabled - using environment variable in subprocess env")
+            logger.info(f"Profiling directory resolved to absolute path: {profile_dir}")
+        else:
+            # No profiling
+            cmd = ["python3", "-m", "vllm.entrypoints.openai.api_server"] + server_args
         
         logger.info(f"Starting vLLM server with command: {' '.join(cmd)}")
         

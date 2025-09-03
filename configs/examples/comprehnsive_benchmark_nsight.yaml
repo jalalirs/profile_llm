@@ -1,0 +1,62 @@
+# Example configuration demonstrating NVIDIA Nsight Systems profiling
+suite: "nsight_profiling_demo"
+name: "Nsight Systems Profiling Demo"
+description: "Demonstrates NVIDIA Nsight Systems profiling with vLLM server"
+tags: ["demo", "nsight", "profiling", "cuda", "performance"]
+
+# Server Configuration
+server:
+  model: "meta-llama/Meta-Llama-3-8B"
+  dtype: "bfloat16"
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.8
+  max_model_len: 2048
+  host: "127.0.0.1"
+  port: null  # Auto-assigned
+
+# Benchmark Configuration
+benchmark:
+  backend: "vllm"
+  endpoint: "/v1/completions"
+  dataset_name: "sharegpt"
+  num_prompts: 10  # Small number for profiling demo
+  max_concurrency: 4
+  temperature: 0.0
+  max_tokens: 64
+  profile: true  # This will be automatically disabled when Nsight is enabled
+  save_result: true
+  save_detailed: true
+
+# System Configuration with Nsight Profiling
+system:
+  monitor_gpu: true
+  monitor_cpu: true
+  monitor_memory: true
+  monitoring_interval: 1.0
+  
+  # Disable torch profiler when using Nsight
+  enable_profiling: false
+  
+  # Nsight Systems profiling configuration
+  enable_nsight: true
+  nsight_output_dir: "nsight_traces"  # Will be created as results/{run_id}/nsight_traces/
+  nsight_trace_fork: true
+  nsight_cuda_graph_trace: "node"
+  nsight_delay: 30  # Wait 30 seconds before starting profiling
+  nsight_duration: 120  # Profile for 2 minutes (None = manual stop)
+
+# Export Configuration
+export:
+  enable_export: true
+  export_csv: true
+  export_influxdb: false
+  export_dir: "exports"
+  csv_summary: true
+  csv_requests: true
+  csv_system: true
+
+# Output Configuration
+output_path: "results/nsight_profiling_demo.json"
+timeout: 600  # 10 minutes
+max_retries: 2
+dry_run: false

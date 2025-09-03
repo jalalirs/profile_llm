@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 class BenchmarkClient:
     """Client for running benchmarks against vLLM server"""
     
-    def __init__(self, benchmark_config: BenchmarkConfig, server_config: ServerConfig):
+    def __init__(self, benchmark_config: BenchmarkConfig, server_config: ServerConfig, system_config: Optional['SystemConfig'] = None):
         self.benchmark_config = benchmark_config
         self.server_config = server_config
+        self.system_config = system_config
         self.server_url: Optional[str] = None
     
     async def run(self) -> Dict[str, Any]:
@@ -62,10 +63,42 @@ class BenchmarkClient:
                 timeout=3600  # 1 hour timeout
             )
             
-            if process.returncode != 0:
-                logger.error(f"Benchmark failed with return code {process.returncode}")
-                logger.error(f"STDERR: {process.stderr}")
-                raise RuntimeError(f"Benchmark execution failed: {process.stderr}")
+            # Prepare dataset
+            input_requests = self._prepare_dataset(tokenizer)
+            
+            # Debug: Log execution context
+            import os
+            logger.info(f"Current working directory: {os.getcwd()}")
+            logger.info(f"Dataset size: {len(input_requests)}")
+            logger.info(f"Max concurrency: {self.benchmark_config.max_concurrency}")
+            logger.info(f"Request rate: {self.benchmark_config.request_rate}")
+            logger.info(f"Server URL: {self.server_url}")
+            
+            # Run benchmark using imported function
+            result = await benchmark(
+                backend="vllm",
+                api_url=f"{self.server_url}/v1/completions",
+                base_url=self.server_url,
+                model_id=self.server_config.model,
+                model_name=self.server_config.model,
+                tokenizer=tokenizer,
+                input_requests=input_requests,
+                logprobs=None,
+                request_rate=self.benchmark_config.request_rate,
+                burstiness=1.0,  # Default burstiness
+                disable_tqdm=self.benchmark_config.disable_tqdm,
+                profile=self.benchmark_config.profile and not (self.system_config and self.system_config.enable_nsight),
+                selected_percentile_metrics=["ttft", "tpot", "itl"],
+                selected_percentiles=[50.0, 95.0, 99.0],
+                ignore_eos=self.benchmark_config.ignore_eos,
+                goodput_config_dict={},
+                max_concurrency=self.benchmark_config.max_concurrency,
+                lora_modules=None,
+                extra_body=self._get_sampling_params(),
+                ramp_up_strategy=None,
+                ramp_up_start_rps=None,
+                ramp_up_end_rps=None,
+            )
             
             # Parse results
             results = self._parse_results(result_file)
