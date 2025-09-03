@@ -67,7 +67,7 @@ class BenchmarkClient:
                 tokenizer=tokenizer,
                 input_requests=input_requests,
                 logprobs=None,
-                request_rate=self.benchmark_config.request_rate,
+                request_rate=float(self.benchmark_config.request_rate) if self.benchmark_config.request_rate != "inf" else float('inf'),
                 burstiness=1.0,  # Default burstiness
                 disable_tqdm=self.benchmark_config.disable_tqdm,
                 profile=self.benchmark_config.profile and not (self.system_config and self.system_config.enable_nsight),

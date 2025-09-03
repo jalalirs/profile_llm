@@ -177,6 +177,15 @@ class Experiment:
                 self.config.server.experiment_profile_dir = str(profiling_dir)
                 logger.info(f"Created profiling directory: {profiling_dir}")
                 logger.info(f"vLLM will save traces here when --profile flag is used in benchmark")
+            
+            # Set up Nsight output directory within experiment
+            if self.config.system.enable_nsight:
+                nsight_dir = run_dir / (self.config.system.nsight_output_dir or "nsight_traces")
+                nsight_dir.mkdir(parents=True, exist_ok=True)
+                # Update system config to use experiment-specific directory
+                self.config.system.nsight_output_dir = str(nsight_dir)
+                logger.info(f"Created Nsight output directory: {nsight_dir}")
+                logger.info(f"Nsight traces will be saved here")
         
         # Server manager
         self.server_manager = VLLMServerManager(self.config.server, self.config.system)
