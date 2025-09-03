@@ -288,7 +288,7 @@ class SystemConfig(BaseModel):
     nsight_duration: Optional[int] = None  # seconds to profile (None = manual stop)
     
     # High verbosity Nsight options
-    nsight_trace: str = "cuda,cudnn,mpi,osrt"  # Enable comprehensive tracing: CUDA, cuDNN, MPI, OS runtime
+    nsight_trace: str = "cuda,cudnn,mpi,osrt,nvtx,openmp"  # Enable comprehensive tracing: CUDA, cuDNN, MPI, OS runtime, NVTX, OpenMP
     nsight_cuda_trace_all_apis: bool = True  # Trace all CUDA APIs (high overhead but comprehensive)
     nsight_cuda_memory_usage: bool = True  # Track GPU memory usage by CUDA kernels
     nsight_cuda_backtrace: str = "all"  # Collect backtraces for all CUDA APIs
@@ -303,6 +303,52 @@ class SystemConfig(BaseModel):
     # Additional tracing options (these are now included in nsight_trace above)
     nsight_mpi_trace: bool = True  # Enable MPI tracing for collective operations
     nsight_osrt_trace: bool = True  # Enable OS runtime tracing for system calls
+    
+    # Advanced CPU tracing options
+    # Note: CPU function tracing is achieved through osrt (OS runtime) and sampling
+    nsight_cpu_trace_children: bool = True  # Trace child processes
+    nsight_cpu_trace_fork: bool = True  # Trace fork/exec calls
+    nsight_cpu_trace_syscalls: bool = True  # Trace system calls (via osrt)
+    nsight_cpu_trace_locks: bool = True  # Trace mutex/lock operations (via osrt)
+    nsight_cpu_trace_memory: bool = True  # Trace memory allocations/deallocations (via osrt)
+    nsight_cpu_trace_io: bool = True  # Trace I/O operations (via osrt)
+    nsight_cpu_trace_network: bool = True  # Trace network operations (via osrt)
+    nsight_cpu_trace_threads: bool = True  # Trace thread creation/destruction (via osrt)
+    nsight_cpu_trace_signals: bool = True  # Trace signal handling (via osrt)
+    nsight_cpu_trace_timers: bool = True  # Trace timer operations (via osrt)
+    
+    # CPU sampling and profiling options
+    nsight_cpu_sample_rate: int = 1000  # CPU sampling rate in Hz (higher = more overhead)
+    nsight_cpu_sample_scope: str = "process-tree"  # process, process-tree, system
+    nsight_cpu_sample_cpu: bool = True  # Sample CPU usage
+    nsight_cpu_sample_memory: bool = True  # Sample memory usage
+    nsight_cpu_sample_io: bool = True  # Sample I/O operations
+    nsight_cpu_sample_network: bool = True  # Sample network operations
+    
+    # CPU performance counters
+    nsight_cpu_counters: bool = True  # Enable CPU performance counters
+    nsight_cpu_counter_events: str = "cycles,instructions,cache-misses,branch-misses"  # CPU events to track
+    nsight_cpu_counter_scope: str = "process-tree"  # Counter scope
+    
+    # Call stack and symbol resolution
+    nsight_cpu_call_stacks: bool = True  # Capture call stacks
+    nsight_cpu_symbols: bool = True  # Resolve function symbols
+    nsight_cpu_source_lines: bool = True  # Include source line information
+    nsight_cpu_debug_info: bool = True  # Include debug information
+    
+    # Additional CPU profiling options
+    nsight_cpu_kernel_trace: bool = True  # Trace CPU kernel functions
+    nsight_cpu_user_trace: bool = True  # Trace user-space functions
+    nsight_cpu_context_switches: bool = True  # Track context switches
+    nsight_cpu_memory_bandwidth: bool = True  # Track memory bandwidth usage
+    nsight_cpu_cache_events: bool = True  # Track cache events
+    nsight_cpu_branch_events: bool = True  # Track branch prediction events
+    
+    # Advanced sampling options
+    nsight_cpu_sample_all_threads: bool = True  # Sample all threads
+    nsight_cpu_sample_kernel: bool = True  # Sample kernel space
+    nsight_cpu_sample_user: bool = True  # Sample user space
+    nsight_cpu_sample_idle: bool = False  # Sample idle time (usually not needed)
     
     # GPU management
     gpu_devices: Optional[List[int]] = None  # If None, will auto-detect

@@ -154,6 +154,82 @@ class VLLMServerManager:
             if self.system_config.nsight_event_sample:
                 nsys_cmd.extend(["--event-sample", self.system_config.nsight_event_sample])
             
+            # Advanced CPU tracing options
+            # Note: "cpu" is not a valid trace option in nsys, so we use other methods for CPU tracing
+            
+            if self.system_config.nsight_cpu_trace_children:
+                nsys_cmd.append("--trace-fork-before-exec=true")
+            
+            # OS runtime tracing includes syscalls, memory operations, I/O, etc.
+            if self.system_config.nsight_cpu_trace_syscalls:
+                # osrt is already included in the main trace options above
+                pass
+            
+            # CPU sampling and profiling
+            if self.system_config.nsight_cpu_sample_rate:
+                # Convert CPU sample rate to period
+                cpu_period = int(1000000 / self.system_config.nsight_cpu_sample_rate)
+                cpu_period = max(125000, min(16000000, cpu_period))
+                nsys_cmd.extend(["--cpu-sampling-period", str(cpu_period)])
+            
+            if self.system_config.nsight_cpu_sample_scope:
+                nsys_cmd.extend(["--sample", self.system_config.nsight_cpu_sample_scope])
+            
+            # CPU performance counters
+            if self.system_config.nsight_cpu_counters:
+                nsys_cmd.append("--cpu-counters=true")
+            
+            if self.system_config.nsight_cpu_counter_events:
+                nsys_cmd.extend(["--cpu-counter-events", self.system_config.nsight_cpu_counter_events])
+            
+            if self.system_config.nsight_cpu_counter_scope:
+                nsys_cmd.extend(["--cpu-counter-scope", self.system_config.nsight_cpu_counter_scope])
+            
+            # Call stack and symbol resolution
+            if self.system_config.nsight_cpu_call_stacks:
+                nsys_cmd.append("--call-stack=true")
+            
+            if self.system_config.nsight_cpu_symbols:
+                nsys_cmd.append("--symbols=true")
+            
+            if self.system_config.nsight_cpu_source_lines:
+                nsys_cmd.append("--source-lines=true")
+            
+            if self.system_config.nsight_cpu_debug_info:
+                nsys_cmd.append("--debug-info=true")
+            
+            # Additional CPU profiling options
+            if self.system_config.nsight_cpu_kernel_trace:
+                nsys_cmd.append("--kernel-trace=true")
+            
+            if self.system_config.nsight_cpu_user_trace:
+                nsys_cmd.append("--user-trace=true")
+            
+            if self.system_config.nsight_cpu_context_switches:
+                nsys_cmd.append("--context-switches=true")
+            
+            if self.system_config.nsight_cpu_memory_bandwidth:
+                nsys_cmd.append("--memory-bandwidth=true")
+            
+            if self.system_config.nsight_cpu_cache_events:
+                nsys_cmd.append("--cache-events=true")
+            
+            if self.system_config.nsight_cpu_branch_events:
+                nsys_cmd.append("--branch-events=true")
+            
+            # Advanced sampling options
+            if self.system_config.nsight_cpu_sample_all_threads:
+                nsys_cmd.append("--sample-all-threads=true")
+            
+            if self.system_config.nsight_cpu_sample_kernel:
+                nsys_cmd.append("--sample-kernel=true")
+            
+            if self.system_config.nsight_cpu_sample_user:
+                nsys_cmd.append("--sample-user=true")
+            
+            if self.system_config.nsight_cpu_sample_idle:
+                nsys_cmd.append("--sample-idle=true")
+            
             # Output options
             if self.system_config.nsight_stats:
                 nsys_cmd.append("--stats=true")
