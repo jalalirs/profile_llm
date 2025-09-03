@@ -17,7 +17,7 @@ server:
   kv_cache_dtype: "fp8_e4m3"
   
   # Parallel processing
-  tensor_parallel_size: 2
+  tensor_parallel_size: 4
   pipeline_parallel_size: 1
   data_parallel_size: 1
   
@@ -29,7 +29,7 @@ server:
   swap_space: 4
   
   # Model length and batching
-  max_model_len: 4096
+  max_model_len: 2048
   max_num_seqs: 64
   max_num_batched_tokens: null  # Auto-calculated
   
