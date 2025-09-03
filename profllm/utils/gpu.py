@@ -117,14 +117,21 @@ def get_gpu_info() -> List[Dict[str, Any]]:
     
     return gpu_info
 
-def check_gpu_compatibility(tensor_parallel_size: int, model_size_gb: Optional[float] = None) -> Dict[str, Any]:
+def check_gpu_compatibility(
+    tensor_parallel_size: int, 
+    pipeline_parallel_size: int = 1,
+    data_parallel_size: int = 1,
+    model_size_gb: Optional[float] = None
+) -> Dict[str, Any]:
     """Check if GPU configuration is compatible with requirements"""
     result = {
         "compatible": False,
         "total_gpus": 0,
         "total_memory_gb": 0.0,
         "memory_per_gpu_gb": 0.0,
-        "warnings": []
+        "required_gpus": 0,
+        "warnings": [],
+        "errors": []
     }
     
     if not NVML_AVAILABLE:
@@ -136,8 +143,14 @@ def check_gpu_compatibility(tensor_parallel_size: int, model_size_gb: Optional[f
         device_count = nvml.nvmlDeviceGetCount()
         result["total_gpus"] = device_count
         
-        if tensor_parallel_size > device_count:
-            result["warnings"].append(f"tensor_parallel_size ({tensor_parallel_size}) > available GPUs ({device_count})")
+        # Calculate total required GPUs
+        total_required_gpus = tensor_parallel_size * pipeline_parallel_size * data_parallel_size
+        result["required_gpus"] = total_required_gpus
+        
+        # Check if we have enough GPUs
+        if total_required_gpus > device_count:
+            error_msg = f"Not enough GPUs: required {total_required_gpus} (tensor_parallel_size={tensor_parallel_size} × pipeline_parallel_size={pipeline_parallel_size} × data_parallel_size={data_parallel_size}) but only {device_count} available"
+            result["errors"].append(error_msg)
             return result
         
         # Check memory
@@ -157,6 +170,8 @@ def check_gpu_compatibility(tensor_parallel_size: int, model_size_gb: Optional[f
         
         # Estimate memory requirements
         if model_size_gb:
+            # For tensor parallelism, model is split across GPUs
+            # For pipeline parallelism, each stage needs the full model
             memory_per_gpu = model_size_gb / tensor_parallel_size
             memory_overhead = memory_per_gpu * 0.2  # 20% overhead estimate
             required_memory = memory_per_gpu + memory_overhead
@@ -169,7 +184,38 @@ def check_gpu_compatibility(tensor_parallel_size: int, model_size_gb: Optional[f
             result["compatible"] = True
             
     except Exception as e:
-        result["warnings"].append(f"Error checking GPU compatibility: {str(e)}")
+        result["errors"].append(f"Error checking GPU compatibility: {str(e)}")
     
     return result
+
+def estimate_model_size_gb(model_name: str) -> Optional[float]:
+    """Estimate model size in GB based on model name and common patterns"""
+    model_name_lower = model_name.lower()
+    
+    # Common model size patterns
+    if "7b" in model_name_lower or "7b-" in model_name_lower:
+        return 14.0  # ~14GB for 7B models in FP16/BF16
+    elif "8b" in model_name_lower or "8b-" in model_name_lower:
+        return 16.0  # ~16GB for 8B models in FP16/BF16
+    elif "13b" in model_name_lower or "13b-" in model_name_lower:
+        return 26.0  # ~26GB for 13B models in FP16/BF16
+    elif "30b" in model_name_lower or "30b-" in model_name_lower:
+        return 60.0  # ~60GB for 30B models in FP16/BF16
+    elif "65b" in model_name_lower or "65b-" in model_name_lower:
+        return 130.0  # ~130GB for 65B models in FP16/BF16
+    elif "70b" in model_name_lower or "70b-" in model_name_lower:
+        return 140.0  # ~140GB for 70B models in FP16/BF16
+    else:
+        # Try to extract number from model name
+        import re
+        numbers = re.findall(r'\d+', model_name)
+        if numbers:
+            # Assume the largest number is the parameter count in billions
+            param_count = max([int(n) for n in numbers])
+            if param_count > 100:  # Likely billions
+                return param_count * 2.0  # Rough estimate: 2GB per billion parameters in FP16/BF16
+        
+        logger.warning(f"Could not estimate model size for {model_name}")
+        return None
+
 # GPU utilities

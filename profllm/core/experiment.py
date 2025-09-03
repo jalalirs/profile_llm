@@ -155,11 +155,47 @@ class Experiment:
     async def _validate_config(self):
         """Validate experiment configuration"""
         from ..config.validation import validate_config
+        from ..utils.gpu import check_gpu_compatibility, estimate_model_size_gb
         
         warnings = validate_config(self.config)
         if warnings:
             for warning in warnings:
                 logger.warning(f"Configuration warning: {warning}")
+        
+        # Validate GPU requirements
+        logger.info("Validating GPU requirements...")
+        model_size_gb = estimate_model_size_gb(self.config.server.model)
+        
+        gpu_check = check_gpu_compatibility(
+            tensor_parallel_size=self.config.server.tensor_parallel_size,
+            pipeline_parallel_size=self.config.server.pipeline_parallel_size,
+            data_parallel_size=self.config.server.data_parallel_size,
+            model_size_gb=model_size_gb
+        )
+        
+        # Log GPU information
+        logger.info(f"GPU Requirements Check:")
+        logger.info(f"  Available GPUs: {gpu_check['total_gpus']}")
+        logger.info(f"  Required GPUs: {gpu_check['required_gpus']}")
+        logger.info(f"  Memory per GPU: {gpu_check['memory_per_gpu_gb']:.1f}GB")
+        if model_size_gb:
+            logger.info(f"  Estimated model size: {model_size_gb:.1f}GB")
+        
+        # Check for errors (fatal)
+        if gpu_check['errors']:
+            error_msg = "GPU validation failed:\n" + "\n".join(f"  - {error}" for error in gpu_check['errors'])
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
+        # Check for warnings (non-fatal but important)
+        if gpu_check['warnings']:
+            for warning in gpu_check['warnings']:
+                logger.warning(f"GPU warning: {warning}")
+        
+        if gpu_check['compatible']:
+            logger.info("✓ GPU requirements satisfied")
+        else:
+            logger.warning("⚠ GPU compatibility uncertain - proceeding with caution")
     
     async def _initialize_components(self):
         """Initialize experiment components"""
