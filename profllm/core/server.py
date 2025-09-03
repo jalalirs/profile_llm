@@ -70,9 +70,9 @@ class VLLMServerManager:
             profiling_enabled = self.system_config.enable_profiling
             nsight_enabled = self.system_config.enable_nsight
         elif (hasattr(self.config, 'enable_profiling') and self.config.enable_profiling) or \
-             (hasattr(self.config, 'experiment_profile_dir') and self.config.experiment_profile_dir):
+           (hasattr(self.config, 'experiment_profile_dir') and self.config.experiment_profile_dir):
             profiling_enabled = True
-        
+            
         if profiling_enabled and not nsight_enabled:
             # Use experiment-specific profiling directory
             if hasattr(self.config, 'experiment_profile_dir') and self.config.experiment_profile_dir:
@@ -157,8 +157,8 @@ class VLLMServerManager:
             # Advanced CPU tracing options
             # Note: "cpu" is not a valid trace option in nsys, so we use other methods for CPU tracing
             
-            if self.system_config.nsight_cpu_trace_children:
-                nsys_cmd.append("--trace-fork-before-exec=true")
+            # Note: --trace-fork-before-exec is already handled above in the main trace options
+            # No need to add it again here
             
             # OS runtime tracing includes syscalls, memory operations, I/O, etc.
             if self.system_config.nsight_cpu_trace_syscalls:
@@ -166,26 +166,27 @@ class VLLMServerManager:
                 pass
             
             # CPU sampling and profiling
-            if self.system_config.nsight_cpu_sample_rate:
+            # Note: CPU sampling is handled by the main --sampling-period option above
+            # The nsight_cpu_sample_rate is used to override the main sampling frequency if needed
+            if self.system_config.nsight_cpu_sample_rate and self.system_config.nsight_cpu_sample_rate != self.system_config.nsight_sampling_frequency:
                 # Convert CPU sample rate to period
                 cpu_period = int(1000000 / self.system_config.nsight_cpu_sample_rate)
                 cpu_period = max(125000, min(16000000, cpu_period))
-                nsys_cmd.extend(["--cpu-sampling-period", str(cpu_period)])
+                # Update the main sampling period if CPU sampling rate is different
+                # Remove existing sampling-period and add new one
+                nsys_cmd = [arg for arg in nsys_cmd if not arg.startswith("--sampling-period")]
+                nsys_cmd.extend(["--sampling-period", str(cpu_period)])
             
-            if self.system_config.nsight_cpu_sample_scope:
+            if self.system_config.nsight_cpu_sample_scope and self.system_config.nsight_cpu_sample_scope != self.system_config.nsight_sample:
+                # Update the main sample scope if CPU sample scope is different
+                nsys_cmd = [arg for arg in nsys_cmd if not arg.startswith("--sample")]
                 nsys_cmd.extend(["--sample", self.system_config.nsight_cpu_sample_scope])
             
-            # CPU performance counters
-            if self.system_config.nsight_cpu_counters:
-                nsys_cmd.append("--cpu-counters=true")
+            # CPU performance counters and profiling options
+            # Note: Many of these options are not valid in nsys profile
+            # We'll keep only the valid ones and use the main sampling/tracing options
             
-            if self.system_config.nsight_cpu_counter_events:
-                nsys_cmd.extend(["--cpu-counter-events", self.system_config.nsight_cpu_counter_events])
-            
-            if self.system_config.nsight_cpu_counter_scope:
-                nsys_cmd.extend(["--cpu-counter-scope", self.system_config.nsight_cpu_counter_scope])
-            
-            # Call stack and symbol resolution
+            # Call stack and symbol resolution (these are valid)
             if self.system_config.nsight_cpu_call_stacks:
                 nsys_cmd.append("--call-stack=true")
             
@@ -198,37 +199,12 @@ class VLLMServerManager:
             if self.system_config.nsight_cpu_debug_info:
                 nsys_cmd.append("--debug-info=true")
             
-            # Additional CPU profiling options
-            if self.system_config.nsight_cpu_kernel_trace:
-                nsys_cmd.append("--kernel-trace=true")
-            
-            if self.system_config.nsight_cpu_user_trace:
-                nsys_cmd.append("--user-trace=true")
-            
-            if self.system_config.nsight_cpu_context_switches:
-                nsys_cmd.append("--context-switches=true")
-            
-            if self.system_config.nsight_cpu_memory_bandwidth:
-                nsys_cmd.append("--memory-bandwidth=true")
-            
-            if self.system_config.nsight_cpu_cache_events:
-                nsys_cmd.append("--cache-events=true")
-            
-            if self.system_config.nsight_cpu_branch_events:
-                nsys_cmd.append("--branch-events=true")
-            
-            # Advanced sampling options
-            if self.system_config.nsight_cpu_sample_all_threads:
-                nsys_cmd.append("--sample-all-threads=true")
-            
-            if self.system_config.nsight_cpu_sample_kernel:
-                nsys_cmd.append("--sample-kernel=true")
-            
-            if self.system_config.nsight_cpu_sample_user:
-                nsys_cmd.append("--sample-user=true")
-            
-            if self.system_config.nsight_cpu_sample_idle:
-                nsys_cmd.append("--sample-idle=true")
+            # Note: The following options are not valid in nsys profile:
+            # --cpu-counters, --cpu-counter-events, --cpu-counter-scope
+            # --kernel-trace, --user-trace, --context-switches
+            # --memory-bandwidth, --cache-events, --branch-events
+            # --sample-all-threads, --sample-kernel, --sample-user, --sample-idle
+            # These features are achieved through the main trace and sampling options
             
             # Output options
             if self.system_config.nsight_stats:
