@@ -100,40 +100,27 @@ class VLLMServerManager:
             # Build nsys command with high verbosity options
             nsys_cmd = ["nsys", "profile", "-o", str(nsight_output_path)]
             
-            # Basic tracing options
+            # Build trace options list
+            trace_options = []
             if self.system_config.nsight_trace:
-                nsys_cmd.extend(["--trace", self.system_config.nsight_trace])
+                trace_options.extend(self.system_config.nsight_trace.split(','))
+            
+            # Add additional trace options if enabled
+            if self.system_config.nsight_mpi_trace and "mpi" not in trace_options:
+                trace_options.append("mpi")
+            
+            if self.system_config.nsight_osrt_trace and "osrt" not in trace_options:
+                trace_options.append("osrt")
+            
+            # Add trace option (only once)
+            if trace_options:
+                nsys_cmd.extend(["--trace", ",".join(trace_options)])
             
             if self.system_config.nsight_trace_fork:
                 nsys_cmd.append("--trace-fork-before-exec=true")
             
             if self.system_config.nsight_cuda_graph_trace:
                 nsys_cmd.extend(["--cuda-graph-trace", self.system_config.nsight_cuda_graph_trace])
-            
-            # NCCL/Collective communication tracing
-            if self.system_config.nsight_nccl_trace and "nccl" not in self.system_config.nsight_trace:
-                # Add NCCL to trace if not already included
-                current_trace = self.system_config.nsight_trace
-                if current_trace and current_trace != "cuda":
-                    nsys_cmd.extend(["--trace", f"{current_trace},nccl"])
-                else:
-                    nsys_cmd.extend(["--trace", "cuda,nccl"])
-            
-            if self.system_config.nsight_mpi_trace and "mpi" not in self.system_config.nsight_trace:
-                # Add MPI to trace if not already included
-                current_trace = self.system_config.nsight_trace
-                if current_trace and current_trace != "cuda":
-                    nsys_cmd.extend(["--trace", f"{current_trace},mpi"])
-                else:
-                    nsys_cmd.extend(["--trace", "cuda,mpi"])
-            
-            if self.system_config.nsight_osrt_trace and "osrt" not in self.system_config.nsight_trace:
-                # Add OSRT to trace if not already included
-                current_trace = self.system_config.nsight_trace
-                if current_trace and current_trace != "cuda":
-                    nsys_cmd.extend(["--trace", f"{current_trace},osrt"])
-                else:
-                    nsys_cmd.extend(["--trace", "cuda,osrt"])
             
             # High verbosity CUDA tracing
             if self.system_config.nsight_cuda_trace_all_apis:
@@ -152,8 +139,11 @@ class VLLMServerManager:
             if self.system_config.nsight_sample:
                 nsys_cmd.extend(["--sample", self.system_config.nsight_sample])
             
+            # Note: --sampling-frequency is not a valid nsys option, using --sampling-period instead
             if self.system_config.nsight_sampling_frequency:
-                nsys_cmd.extend(["--sampling-frequency", str(self.system_config.nsight_sampling_frequency)])
+                # Convert frequency to period (period = 1/frequency * 1000000 for microseconds)
+                period = int(1000000 / self.system_config.nsight_sampling_frequency)
+                nsys_cmd.extend(["--sampling-period", str(period)])
             
             if self.system_config.nsight_cpu_core_events:
                 nsys_cmd.extend(["--cpu-core-events", self.system_config.nsight_cpu_core_events])
