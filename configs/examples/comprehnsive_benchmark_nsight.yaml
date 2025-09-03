@@ -19,7 +19,7 @@ benchmark:
   backend: "vllm"
   endpoint: "/v1/completions"
   dataset_name: "sharegpt"
-  num_prompts: 10  # Small number for profiling demo
+  num_prompts: 1  # Small number for profiling demo
   max_concurrency: 4
   temperature: 0.0
   max_tokens: 64

@@ -97,19 +97,34 @@ class BenchmarkClient:
             if not self.benchmark_config.dataset_path:
                 self.benchmark_config.dataset_path = self._download_sharegpt_dataset()
             
+            # Ensure consistent prompts by using a fixed seed
+            # Use the configured seed, but default to 42 for consistency
+            fixed_seed = getattr(self.benchmark_config, 'seed', 42) or 42
+            logger.info(f"Using seed {fixed_seed} for consistent prompt generation")
             dataset = ShareGPTDataset(
-                random_seed=self.benchmark_config.seed,
+                random_seed=fixed_seed,
                 dataset_path=self.benchmark_config.dataset_path
             )
-            return dataset.sample(
+            requests = dataset.sample(
                 tokenizer=tokenizer,
                 num_requests=self.benchmark_config.num_prompts,
                 output_len=getattr(self.benchmark_config, 'sharegpt_output_len', None),
                 request_id_prefix="profllm-benchmark"
             )
+            
+            # Log prompt information
+            self._log_prompt_info(requests)
+            return requests
         elif self.benchmark_config.dataset_name == "random":
-            dataset = RandomDataset(dataset_path=self.benchmark_config.dataset_path)
-            return dataset.sample(
+            # Ensure consistent random prompts by using a fixed seed
+            # Use the configured seed, but default to 42 for consistency
+            fixed_seed = getattr(self.benchmark_config, 'seed', 42) or 42
+            logger.info(f"Using seed {fixed_seed} for consistent prompt generation")
+            dataset = RandomDataset(
+                dataset_path=self.benchmark_config.dataset_path,
+                random_seed=fixed_seed
+            )
+            requests = dataset.sample(
                 tokenizer=tokenizer,
                 num_requests=self.benchmark_config.num_prompts,
                 prefix_len=0,
@@ -118,6 +133,10 @@ class BenchmarkClient:
                 range_ratio=0.0,
                 request_id_prefix="profllm-benchmark"
             )
+            
+            # Log prompt information
+            self._log_prompt_info(requests)
+            return requests
         else:
             raise ValueError(f"Unsupported dataset: {self.benchmark_config.dataset_name}")
     
@@ -180,6 +199,47 @@ class BenchmarkClient:
             
             logger.info(f"Created fallback ShareGPT dataset at {dataset_file}")
             return str(dataset_file)
+    
+    def _log_prompt_info(self, requests: list):
+        """Log information about the prompts being used"""
+        if not requests:
+            logger.warning("No requests generated from dataset")
+            return
+        
+        # Calculate prompt length statistics
+        prompt_lengths = [req.prompt_len for req in requests]
+        output_lengths = [req.expected_output_len for req in requests]
+        
+        min_prompt_len = min(prompt_lengths)
+        max_prompt_len = max(prompt_lengths)
+        avg_prompt_len = sum(prompt_lengths) / len(prompt_lengths)
+        
+        min_output_len = min(output_lengths)
+        max_output_len = max(output_lengths)
+        avg_output_len = sum(output_lengths) / len(output_lengths)
+        
+        logger.info("=" * 60)
+        logger.info("PROMPT INFORMATION")
+        logger.info("=" * 60)
+        logger.info(f"Total number of prompts: {len(requests)}")
+        logger.info(f"Prompt lengths - Min: {min_prompt_len}, Max: {max_prompt_len}, Avg: {avg_prompt_len:.1f}")
+        logger.info(f"Output lengths - Min: {min_output_len}, Max: {max_output_len}, Avg: {avg_output_len:.1f}")
+        logger.info("=" * 60)
+        
+        # Log first few prompts as examples
+        logger.info("SAMPLE PROMPTS:")
+        for i, req in enumerate(requests[:3]):  # Show first 3 prompts
+            prompt_preview = str(req.prompt)[:100] + "..." if len(str(req.prompt)) > 100 else str(req.prompt)
+            logger.info(f"  Prompt {i+1} (ID: {req.request_id}):")
+            logger.info(f"    Length: {req.prompt_len} tokens")
+            logger.info(f"    Expected output: {req.expected_output_len} tokens")
+            logger.info(f"    Preview: {prompt_preview}")
+            logger.info("")
+        
+        if len(requests) > 3:
+            logger.info(f"  ... and {len(requests) - 3} more prompts")
+        
+        logger.info("=" * 60)
     
     def _get_sampling_params(self) -> dict:
         """Get sampling parameters for the benchmark"""

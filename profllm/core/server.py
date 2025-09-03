@@ -213,8 +213,8 @@ class VLLMServerManager:
                 cmd,
                 shell=False,
                 env=env,
-                stdout=subprocess.DEVNULL,  # Don't capture stdout
-                stderr=subprocess.DEVNULL,  # Don't capture stderr
+                stdout=subprocess.PIPE,  # Capture stdout for debugging
+                stderr=subprocess.PIPE,  # Capture stderr for debugging
             )
             
             logger.info(f"Subprocess created successfully with PID {self.process.pid}")
@@ -239,9 +239,16 @@ class VLLMServerManager:
             
             # Now check if it's still running
             if self.process.poll() is not None:
-                # Process died during startup
+                # Process died during startup - capture output for debugging
+                stdout, stderr = self.process.communicate()
                 error_msg = f"vLLM server process died during startup with exit code {self.process.returncode}"
                 logger.error(error_msg)
+                
+                if stdout:
+                    logger.error(f"STDOUT: {stdout.decode('utf-8', errors='ignore')}")
+                if stderr:
+                    logger.error(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
+                
                 raise RuntimeError(error_msg)
             
             logger.info("✓ vLLM server process is stable and running")
@@ -297,9 +304,17 @@ class VLLMServerManager:
         while time.time() - start_time < timeout:
             # Check if process is still running
             if self.process.poll() is not None:
-                # Since we're not capturing stdout/stderr, just report the exit code
+                # Process died - capture output for debugging
+                stdout, stderr = self.process.communicate()
                 exit_code = self.process.returncode
-                raise RuntimeError(f"vLLM server process died with exit code {exit_code}")
+                error_msg = f"vLLM server process died with exit code {exit_code}"
+                
+                if stdout:
+                    logger.error(f"STDOUT: {stdout.decode('utf-8', errors='ignore')}")
+                if stderr:
+                    logger.error(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
+                
+                raise RuntimeError(error_msg)
             
             try:
                 # Try to connect to health endpoint
