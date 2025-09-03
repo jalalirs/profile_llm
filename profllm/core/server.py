@@ -49,10 +49,19 @@ class VLLMServerManager:
         logger.info(f"Base environment has {len(env)} variables")
         
         # Set Hugging Face cache directory
-        hf_cache_dir = "/workspace/models"
+        hf_cache_dir = os.path.join(os.getcwd(), "models")
         env['HF_HOME'] = hf_cache_dir
         env['TRANSFORMERS_CACHE'] = hf_cache_dir
         env['HF_DATASETS_CACHE'] = hf_cache_dir
+        
+        # Check for Hugging Face token for gated models
+        hf_token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN')
+        if hf_token:
+            env['HUGGINGFACE_HUB_TOKEN'] = hf_token
+            env['HF_TOKEN'] = hf_token
+            logger.info("Hugging Face token found - authentication enabled for gated models")
+        else:
+            logger.warning("No Hugging Face token found - gated models may not be accessible")
         
         # GPU device allocation
         if hasattr(self.config, 'gpu_devices') and self.config.gpu_devices:
