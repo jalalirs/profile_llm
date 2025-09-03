@@ -174,18 +174,10 @@ class VLLMServerManager:
             # Note: Many of these options are not valid in nsys profile
             # We'll keep only the valid ones and use the main sampling/tracing options
             
-            # Call stack and symbol resolution (these are valid)
-            if self.system_config.nsight_cpu_call_stacks:
-                nsys_cmd.append("--call-stack=true")
-            
-            if self.system_config.nsight_cpu_symbols:
-                nsys_cmd.append("--symbols=true")
-            
-            if self.system_config.nsight_cpu_source_lines:
-                nsys_cmd.append("--source-lines=true")
-            
-            if self.system_config.nsight_cpu_debug_info:
-                nsys_cmd.append("--debug-info=true")
+            # Call stack and symbol resolution
+            # Note: These options are not valid in nsys profile
+            # --call-stack, --symbols, --source-lines, --debug-info are not supported
+            # Symbol resolution and call stacks are handled automatically by nsys
             
             # Note: The following options are not valid in nsys profile:
             # --cpu-counters, --cpu-counter-events, --cpu-counter-scope
