@@ -1,4 +1,20 @@
 # Comprehensive benchmark configuration with NVIDIA Nsight Systems profiling
+#
+# CONSISTENCY & REPRODUCIBILITY:
+# - Fixed seed (42) for deterministic prompt generation
+# - All inputs exactly 512 tokens (smart sampling: only prompts >= 512 tokens)
+# - Deterministic generation (temperature=0.0, ignore_eos=false)
+# - Consistent batching (4 requests = 4 batch size)
+# - Comprehensive Nsight profiling with proper timing (60s delay, 5min profiling)
+#
+# PERFORMANCE TUNING VARIABLES:
+# SCALE UP:  n_requests: 8, tensor_parallel_size: 8, max_num_batched_tokens: 4096
+# SCALE DOWN: n_requests: 2, tensor_parallel_size: 2, max_num_batched_tokens: 1024
+# INPUT SIZE: fixed_input_length: 256/512/1024/2048 (affects memory & compute)
+# OUTPUT SIZE: max_tokens: 10/50/100 (affects generation time)
+# PROFILING: nsight_duration: 120/300/600 (seconds), nsight_delay: 30/60/120 (model loading)
+# LOAD: max_concurrency: 2/4/8, request_rate: 1.0/2.0/4.0 (requests per second)
+# MEMORY: gpu_memory_utilization: 0.7/0.8/0.9 (GPU memory usage)
 
 suite: "quantization_analysis_nsight"
 name: "FP8 vs BF16 Performance Comparison with Nsight Profiling"
