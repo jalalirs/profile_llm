@@ -83,6 +83,16 @@ class VLLMServerManager:
                 # Pipeline parallelism may need additional environment variables
                 env['VLLM_DISTRIBUTED_EXECUTOR_BACKEND'] = 'mp'  # Use multiprocessing backend
                 env['VLLM_USE_RAY'] = '0'  # Disable Ray for local multiprocessing
+                
+                # Additional environment variables for pipeline parallelism
+                env['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'  # Use spawn method for multiprocessing
+                env['VLLM_ATTENTION_BACKEND'] = 'FLASHINFER'  # Use FlashInfer for better performance
+                env['VLLM_USE_MODELSCOPE'] = '0'  # Disable ModelScope
+                env['VLLM_USE_TRITON'] = '0'  # Disable Triton for compatibility
+                
+                # Set CUDA device order
+                env['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+                env['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'  # Make all GPUs visible
         
         # GPU device allocation
         if hasattr(self.config, 'gpu_devices') and self.config.gpu_devices:
@@ -456,6 +466,27 @@ class VLLMServerManager:
                     logger.error(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
                 
                 raise RuntimeError(error_msg)
+            
+            # For pipeline parallelism, also check if GPU processes are being spawned
+            if self.config.pipeline_parallel_size > 1:
+                try:
+                    # Check for GPU processes using nvidia-smi
+                    import subprocess
+                    result = subprocess.run(['nvidia-smi', '--query-compute-apps=pid,process_name', '--format=csv,noheader,nounits'], 
+                                          capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        gpu_processes = result.stdout.strip().split('\n') if result.stdout.strip() else []
+                        logger.info(f"GPU processes found: {len(gpu_processes)}")
+                        for i, proc in enumerate(gpu_processes):
+                            logger.info(f"  GPU Process {i+1}: {proc}")
+                        
+                        if len(gpu_processes) == 0:
+                            logger.warning(f"⚠ No GPU processes found for pipeline parallelism (PP={self.config.pipeline_parallel_size})")
+                            logger.warning(f"This suggests vLLM is not spawning GPU workers properly")
+                    else:
+                        logger.warning(f"Could not check GPU processes: {result.stderr}")
+                except Exception as e:
+                    logger.warning(f"Could not check GPU processes: {e}")
             
             try:
                 # Try to connect to health endpoint
