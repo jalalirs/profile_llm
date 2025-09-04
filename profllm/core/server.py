@@ -440,13 +440,7 @@ class VLLMServerManager:
                 
                 raise RuntimeError(error_msg)
             
-            # For pipeline parallelism, just wait without health checks
-            if self.config.pipeline_parallel_size > 1:
-                logger.info(f"Pipeline parallelism: waiting for initialization (no health checks)")
-                await asyncio.sleep(check_interval)
-                continue
-            
-            # For tensor parallelism only (PP=1), try health check
+            # Try health check for all configurations
             try:
                 # Try to connect to health endpoint
                 response = requests.get(f"{self.base_url}/health", timeout=10)
@@ -456,8 +450,27 @@ class VLLMServerManager:
             except Exception as e:
                 last_error = str(e)
                 check_count += 1
-                if check_count % 10 == 0:  # Log every 10th failed attempt
-                    logger.info(f"Health check attempt {check_count}: {last_error}")
+                
+                # For pipeline parallelism, be more patient and log less frequently
+                if self.config.pipeline_parallel_size > 1:
+                    if check_count % 20 == 0:  # Log every 20th failed attempt for pipeline parallelism
+                        logger.info(f"Pipeline parallelism health check attempt {check_count}: {last_error}")
+                        
+                        # Additional debugging for pipeline parallelism
+                        try:
+                            import subprocess
+                            result = subprocess.run(['nvidia-smi', '--query-compute-apps=pid,process_name', '--format=csv,noheader,nounits'], 
+                                                  capture_output=True, text=True, timeout=5)
+                            if result.returncode == 0 and result.stdout.strip():
+                                gpu_processes = result.stdout.strip().split('\n')
+                                logger.info(f"GPU processes: {len(gpu_processes)} processes found")
+                                for proc in gpu_processes[:3]:  # Show first 3 processes
+                                    logger.info(f"  GPU process: {proc}")
+                        except Exception as gpu_debug_error:
+                            logger.debug(f"GPU process debugging failed: {gpu_debug_error}")
+                else:
+                    if check_count % 10 == 0:  # Log every 10th failed attempt for tensor parallelism
+                        logger.info(f"Health check attempt {check_count}: {last_error}")
             
             await asyncio.sleep(check_interval)
         
