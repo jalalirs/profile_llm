@@ -557,7 +557,7 @@ class VLLMServerManager:
         finally:
             self.process = None
     
-    async def _wait_for_nsight_trace_file(self, max_wait_time: int = 120):
+    async def _wait_for_nsight_trace_file(self, max_wait_time: int = 180):
         """Wait for Nsight trace file to be written and verify it's complete"""
         if not self.system_config or not self.system_config.enable_nsight:
             return
@@ -636,14 +636,30 @@ class VLLMServerManager:
         
         # Timeout reached
         logger.warning(f"Timeout waiting for Nsight trace files after {max_wait_time}s")
-        if trace_files:
-            logger.warning("Trace files may be incomplete - check file sizes and modification times")
-            for trace_file in trace_files:
-                try:
-                    size_mb = trace_file.stat().st_size / (1024 * 1024)
-                    logger.warning(f"  {trace_file.name}: {size_mb:.2f} MB")
-                except OSError:
-                    logger.warning(f"  {trace_file.name}: Unable to read file info")
+        
+        # Check if directory exists and list contents
+        try:
+            if nsight_output_path.exists():
+                all_files = list(nsight_output_path.iterdir())
+                logger.warning(f"Directory exists with {len(all_files)} files:")
+                for file in all_files:
+                    try:
+                        size_mb = file.stat().st_size / (1024 * 1024)
+                        logger.warning(f"  {file.name}: {size_mb:.2f} MB")
+                    except OSError:
+                        logger.warning(f"  {file.name}: Unable to read file info")
+            else:
+                logger.warning(f"Nsight output directory does not exist: {nsight_output_path}")
+        except Exception as e:
+            logger.warning(f"Error checking directory contents: {e}")
+        
+        # Provide troubleshooting suggestions
+        logger.warning("Troubleshooting suggestions:")
+        logger.warning("1. Check if Nsight Systems is properly installed: nsys --version")
+        logger.warning("2. Verify Nsight has permission to write to the output directory")
+        logger.warning("3. Check if the benchmark duration is longer than nsight_delay")
+        logger.warning("4. Consider reducing nsight_delay or increasing benchmark duration")
+        logger.warning("5. Check Nsight command line arguments for compatibility issues")
     
     def get_server_info(self) -> Dict[str, Any]:
         """Get server information"""

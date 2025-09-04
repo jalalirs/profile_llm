@@ -142,8 +142,8 @@ system:
   nsight_output_dir: "nsight_traces"  # Will be created as results/{run_id}/nsight_traces/
   nsight_trace_fork: true
   nsight_cuda_graph_trace: "node"
-  nsight_delay: 60  # Wait 60 seconds before starting profiling (model loading time)
-  nsight_duration: 300  # Profile for 5 minutes (None = manual stop)
+  nsight_delay: 10  # Wait 10 seconds before starting profiling (model loading time)
+  nsight_duration: 60  # Profile for 1 minute (sufficient for short benchmarks)
   
   # High verbosity Nsight options for comprehensive analysis
   nsight_trace: "cuda,cudnn,mpi"  # Enable comprehensive tracing: CUDA, cuDNN, MPI, OS runtime
