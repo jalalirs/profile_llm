@@ -302,10 +302,12 @@ class VLLMServerManager:
             logger.info("Creating subprocess...")
             self.process = subprocess.Popen(
                 cmd,
-                shell=False,
                 env=env,
-                stdout=subprocess.PIPE,  # Capture stdout for debugging
-                stderr=subprocess.PIPE,  # Capture stderr for debugging
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
             )
             
             logger.info(f"Subprocess created successfully with PID {self.process.pid}")
