@@ -68,11 +68,11 @@ class VLLMServerManager:
         if total_gpus > 1:
             logger.info(f"Setting up environment for distributed execution (TP={self.config.tensor_parallel_size}, PP={self.config.pipeline_parallel_size}, total={total_gpus})")
             
-            # Enable detailed logging for distributed setups
-            env['VLLM_LOGGING_LEVEL'] = 'DEBUG'
-            env['CUDA_LAUNCH_BLOCKING'] = '1'
-            env['NCCL_DEBUG'] = 'TRACE'
-            env['VLLM_TRACE_FUNCTION'] = '1'
+            # Enable detailed logging for distributed setups (but not too verbose)
+            env['VLLM_LOGGING_LEVEL'] = 'INFO'  # Changed from DEBUG to INFO
+            # env['CUDA_LAUNCH_BLOCKING'] = '1'  # Commented out - might cause blocking
+            # env['NCCL_DEBUG'] = 'TRACE'  # Commented out - too verbose
+            # env['VLLM_TRACE_FUNCTION'] = '1'  # Commented out - might cause issues
             
             # Set network configuration for distributed communication
             env['VLLM_HOST_IP'] = '127.0.0.1'
