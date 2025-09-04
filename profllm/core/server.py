@@ -493,26 +493,65 @@ class VLLMServerManager:
             return False
     
     async def stop(self):
-        """Stop the vLLM server"""
+        """Stop the vLLM server with proper trace flushing for profiling"""
         if not self.process:
             return
         
         logger.info(f"Stopping vLLM server (PID: {self.process.pid})")
         
+        # Check if we're using Nsight profiling - need extra time for trace flushing
+        nsight_enabled = False
+        if self.system_config:
+            nsight_enabled = self.system_config.enable_nsight
+        
         try:
             # Try graceful shutdown first
             self.process.send_signal(signal.SIGTERM)
             
+            # Use longer timeout for Nsight profiling to allow trace flushing
+            if nsight_enabled:
+                shutdown_timeout = 120  # 2 minutes for Nsight trace flushing
+                logger.info("Nsight profiling detected - using extended shutdown timeout for trace flushing")
+            else:
+                shutdown_timeout = 30  # 30 seconds for normal shutdown
+            
             # Wait for graceful shutdown
             try:
-                self.process.wait(timeout=30)
+                self.process.wait(timeout=shutdown_timeout)
                 logger.info("vLLM server stopped gracefully")
+                
+                # For Nsight profiling, give extra time for trace file to be written
+                if nsight_enabled:
+                    logger.info("Waiting additional 30 seconds for Nsight trace file to be written...")
+                    await asyncio.sleep(30)
+                    
             except subprocess.TimeoutExpired:
-                # Force kill if graceful shutdown failed
-                logger.warning("Graceful shutdown timed out, force killing...")
-                self.process.send_signal(signal.SIGKILL)
-                self.process.wait(timeout=10)
-                logger.info("vLLM server force killed")
+                if nsight_enabled:
+                    logger.warning(f"Graceful shutdown timed out after {shutdown_timeout}s - Nsight traces may be incomplete")
+                    logger.warning("Consider increasing nsight_duration or reducing workload for complete traces")
+                else:
+                    logger.warning("Graceful shutdown timed out, force killing...")
+                
+                # Only force kill if absolutely necessary
+                # For Nsight profiling, try SIGINT first (more graceful than SIGKILL)
+                if nsight_enabled:
+                    logger.info("Trying SIGINT for more graceful Nsight shutdown...")
+                    self.process.send_signal(signal.SIGINT)
+                    try:
+                        self.process.wait(timeout=30)
+                        logger.info("vLLM server stopped with SIGINT")
+                        # Still wait for trace flushing
+                        await asyncio.sleep(30)
+                    except subprocess.TimeoutExpired:
+                        logger.warning("SIGINT also timed out, using SIGKILL as last resort")
+                        self.process.send_signal(signal.SIGKILL)
+                        self.process.wait(timeout=10)
+                        logger.warning("vLLM server force killed - Nsight traces may be lost")
+                else:
+                    # Normal force kill for non-profiling
+                    self.process.send_signal(signal.SIGKILL)
+                    self.process.wait(timeout=10)
+                    logger.info("vLLM server force killed")
                 
         except Exception as e:
             logger.error(f"Error stopping vLLM server: {str(e)}")
