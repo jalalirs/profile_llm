@@ -385,6 +385,14 @@ class VLLMServerManager:
             check_interval = max(check_interval, 5.0)  # Check every 5 seconds for distributed
             logger.info(f"Distributed setup detected ({total_processes} processes) - using extended timeout: {timeout}s, check interval: {check_interval}s")
             
+            # Special handling for pipeline parallelism
+            if self.config.pipeline_parallel_size > 1:
+                logger.info(f"Pipeline parallelism detected (PP={self.config.pipeline_parallel_size}) - this requires special coordination")
+                # Pipeline parallelism needs more time for initialization
+                timeout = max(timeout, 600)  # At least 10 minutes for pipeline parallelism
+                check_interval = max(check_interval, 10.0)  # Check every 10 seconds for pipeline parallelism
+                logger.info(f"Pipeline parallelism: extended timeout to {timeout}s, check interval to {check_interval}s")
+            
             # For distributed setups, also check if we can see the expected number of vLLM processes
             try:
                 import psutil
@@ -400,6 +408,12 @@ class VLLMServerManager:
                 logger.info(f"Currently found {len(vllm_processes)} vLLM server processes (expected: {total_processes})")
                 if len(vllm_processes) < total_processes:
                     logger.warning(f"⚠ Only {len(vllm_processes)} vLLM processes found, expected {total_processes}")
+                    
+                    # Special debugging for pipeline parallelism
+                    if self.config.pipeline_parallel_size > 1:
+                        logger.warning(f"Pipeline parallelism issue: PP={self.config.pipeline_parallel_size}, TP={self.config.tensor_parallel_size}")
+                        logger.warning(f"This suggests pipeline stages are not being created properly")
+                        logger.warning(f"Expected: {self.config.pipeline_parallel_size} pipeline stages × {self.config.tensor_parallel_size} workers = {total_processes} processes")
             except Exception as e:
                 logger.warning(f"Could not check vLLM processes: {e}")
         
