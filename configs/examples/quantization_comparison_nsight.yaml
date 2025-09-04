@@ -31,7 +31,7 @@ server:
 
   # Quantization settings
   quantization: "fp8"
-  kv_cache_dtype: "fp8_e4m3"
+  kv_cache_dtype: "auto"
   
   # Parallel processing
   tensor_parallel_size: 4
@@ -158,6 +158,9 @@ system:
   nsight_stats: true  # Generate summary statistics
   nsight_export: "text"  # Export additional text format
   
+  # Additional tracing options (these are now included in nsight_trace above)
+  nsight_mpi_trace: true  # Enable MPI tracing for collective operations
+  nsight_osrt_trace: false  # Enable OS runtime tracing for system calls
 
 # Export configuration
 export:

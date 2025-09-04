@@ -278,8 +278,14 @@ class VLLMServerManager:
                 raise RuntimeError("Failed to create subprocess - process is None")
             
             # Give the process more time to start up before checking
-            logger.info("Waiting for vLLM server process to stabilize...")
-            await asyncio.sleep(2.0)  # Give it 2 seconds to start up
+            # For distributed setups (TP > 1 or PP > 1), need more time for process synchronization
+            total_processes = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
+            startup_delay = max(5.0, total_processes * 2.0)  # At least 5 seconds, or 2 seconds per process
+            
+            logger.info(f"Waiting for vLLM server process to stabilize...")
+            logger.info(f"Distributed setup: TP={self.config.tensor_parallel_size}, PP={self.config.pipeline_parallel_size} ({total_processes} total processes)")
+            logger.info(f"Startup delay: {startup_delay} seconds")
+            await asyncio.sleep(startup_delay)
             
             # Now check if it's still running
             if self.process.poll() is not None:
@@ -342,8 +348,16 @@ class VLLMServerManager:
         if self.process is None:
             raise RuntimeError("Cannot wait for server - no process was created")
         
+        # For distributed setups, use longer timeout and less frequent checks
+        total_processes = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
+        if total_processes > 1:
+            timeout = max(timeout, total_processes * 60)  # At least 1 minute per process
+            check_interval = max(check_interval, 5.0)  # Check every 5 seconds for distributed
+            logger.info(f"Distributed setup detected ({total_processes} processes) - using extended timeout: {timeout}s, check interval: {check_interval}s")
+        
         start_time = time.time()
         last_error = None
+        check_count = 0
         
         while time.time() - start_time < timeout:
             # Check if process is still running
@@ -362,12 +376,15 @@ class VLLMServerManager:
             
             try:
                 # Try to connect to health endpoint
-                response = requests.get(f"{self.base_url}/health", timeout=5)
+                response = requests.get(f"{self.base_url}/health", timeout=10)  # Longer timeout for health check
                 if response.status_code == 200:
                     logger.info("vLLM server is ready")
                     return
             except Exception as e:
                 last_error = str(e)
+                check_count += 1
+                if check_count % 10 == 0:  # Log every 10th failed attempt
+                    logger.info(f"Health check attempt {check_count}: {last_error}")
             
             await asyncio.sleep(check_interval)
         
