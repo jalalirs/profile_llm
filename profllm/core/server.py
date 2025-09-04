@@ -458,7 +458,16 @@ class VLLMServerManager:
                 
                 raise RuntimeError(error_msg)
             
-            # Just wait - no health checks needed
+            # Simple health check to see if server is ready
+            try:
+                response = requests.get(f"{self.base_url}/health", timeout=5)
+                if response.status_code == 200:
+                    logger.info("vLLM server is ready")
+                    return
+            except Exception as e:
+                # Health check failed, continue waiting
+                pass
+            
             logger.info("Waiting for vLLM server to be ready...")
             await asyncio.sleep(check_interval)
         
