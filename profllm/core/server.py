@@ -520,10 +520,9 @@ class VLLMServerManager:
                 self.process.wait(timeout=shutdown_timeout)
                 logger.info("vLLM server stopped gracefully")
                 
-                # For Nsight profiling, give extra time for trace file to be written
+                # For Nsight profiling, wait for trace file to be written
                 if nsight_enabled:
-                    logger.info("Waiting additional 30 seconds for Nsight trace file to be written...")
-                    await asyncio.sleep(30)
+                    await self._wait_for_nsight_trace_file()
                     
             except subprocess.TimeoutExpired:
                 if nsight_enabled:
@@ -541,7 +540,7 @@ class VLLMServerManager:
                         self.process.wait(timeout=30)
                         logger.info("vLLM server stopped with SIGINT")
                         # Still wait for trace flushing
-                        await asyncio.sleep(30)
+                        await self._wait_for_nsight_trace_file()
                     except subprocess.TimeoutExpired:
                         logger.warning("SIGINT also timed out, using SIGKILL as last resort")
                         self.process.send_signal(signal.SIGKILL)
@@ -557,6 +556,94 @@ class VLLMServerManager:
             logger.error(f"Error stopping vLLM server: {str(e)}")
         finally:
             self.process = None
+    
+    async def _wait_for_nsight_trace_file(self, max_wait_time: int = 120):
+        """Wait for Nsight trace file to be written and verify it's complete"""
+        if not self.system_config or not self.system_config.enable_nsight:
+            return
+        
+        # Get the expected trace file path
+        nsight_output_dir = self.system_config.nsight_output_dir or '/tmp/profllm_nsight'
+        nsight_output_path = Path(nsight_output_dir)
+        
+        logger.info(f"Waiting for Nsight trace files to be written in: {nsight_output_path}")
+        
+        start_time = time.time()
+        last_size = {}
+        stable_count = 0
+        
+        while time.time() - start_time < max_wait_time:
+            try:
+                # List all .nsys-rep files in the directory
+                trace_files = list(nsight_output_path.glob("*.nsys-rep"))
+                
+                if not trace_files:
+                    logger.info("No trace files found yet, waiting...")
+                    await asyncio.sleep(2)
+                    continue
+                
+                # Check file sizes and modification times
+                current_sizes = {}
+                all_stable = True
+                
+                for trace_file in trace_files:
+                    try:
+                        stat = trace_file.stat()
+                        current_sizes[trace_file.name] = {
+                            'size': stat.st_size,
+                            'mtime': stat.st_mtime
+                        }
+                        
+                        # Check if file size is stable (not growing)
+                        if trace_file.name in last_size:
+                            if current_sizes[trace_file.name]['size'] == last_size[trace_file.name]['size']:
+                                # Size is stable, check if it's been stable for a while
+                                if current_sizes[trace_file.name]['mtime'] == last_size[trace_file.name]['mtime']:
+                                    continue  # File is stable
+                                else:
+                                    all_stable = False  # File was modified recently
+                            else:
+                                all_stable = False  # File size changed
+                        else:
+                            all_stable = False  # New file or first check
+                            
+                    except (OSError, FileNotFoundError):
+                        all_stable = False
+                        continue
+                
+                # Log current status
+                if trace_files:
+                    logger.info(f"Found {len(trace_files)} trace files:")
+                    for trace_file in trace_files:
+                        size_mb = current_sizes.get(trace_file.name, {}).get('size', 0) / (1024 * 1024)
+                        logger.info(f"  {trace_file.name}: {size_mb:.2f} MB")
+                
+                # Check if all files are stable
+                if all_stable and last_size:
+                    stable_count += 1
+                    if stable_count >= 3:  # Files stable for 6 seconds (3 * 2s intervals)
+                        logger.info("✓ All Nsight trace files are stable and complete")
+                        return
+                else:
+                    stable_count = 0
+                
+                last_size = current_sizes
+                await asyncio.sleep(2)
+                
+            except Exception as e:
+                logger.warning(f"Error checking trace files: {e}")
+                await asyncio.sleep(2)
+        
+        # Timeout reached
+        logger.warning(f"Timeout waiting for Nsight trace files after {max_wait_time}s")
+        if trace_files:
+            logger.warning("Trace files may be incomplete - check file sizes and modification times")
+            for trace_file in trace_files:
+                try:
+                    size_mb = trace_file.stat().st_size / (1024 * 1024)
+                    logger.warning(f"  {trace_file.name}: {size_mb:.2f} MB")
+                except OSError:
+                    logger.warning(f"  {trace_file.name}: Unable to read file info")
     
     def get_server_info(self) -> Dict[str, Any]:
         """Get server information"""
