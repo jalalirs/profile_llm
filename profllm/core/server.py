@@ -63,10 +63,11 @@ class VLLMServerManager:
         else:
             logger.warning("No Hugging Face token found - gated models may not be accessible")
         
-        # Set vLLM distributed execution environment variables for pipeline parallelism
-        total_processes = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
-        if total_processes > 1:
-            # Enable detailed logging for distributed setups
+        # Set vLLM distributed execution environment variables only for pipeline parallelism
+        if self.config.pipeline_parallel_size > 1:
+            logger.info(f"Setting up environment for pipeline parallelism (PP={self.config.pipeline_parallel_size})")
+            
+            # Enable detailed logging for pipeline parallelism
             env['VLLM_LOGGING_LEVEL'] = 'DEBUG'
             env['CUDA_LAUNCH_BLOCKING'] = '1'
             env['NCCL_DEBUG'] = 'TRACE'
@@ -77,22 +78,17 @@ class VLLMServerManager:
             env['NCCL_SOCKET_IFNAME'] = 'lo'  # Use loopback interface for localhost
             env['GLOO_SOCKET_IFNAME'] = 'lo'
             
-            # Special handling for pipeline parallelism
-            if self.config.pipeline_parallel_size > 1:
-                logger.info(f"Setting up environment for pipeline parallelism (PP={self.config.pipeline_parallel_size})")
-                # Pipeline parallelism may need additional environment variables
-                env['VLLM_DISTRIBUTED_EXECUTOR_BACKEND'] = 'mp'  # Use multiprocessing backend
-                env['VLLM_USE_RAY'] = '0'  # Disable Ray for local multiprocessing
-                
-                # Additional environment variables for pipeline parallelism
-                env['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'  # Use spawn method for multiprocessing
-                env['VLLM_ATTENTION_BACKEND'] = 'XFORMER'  # Use XFormers for better performance
-                env['VLLM_USE_MODELSCOPE'] = '0'  # Disable ModelScope
-                env['VLLM_USE_TRITON'] = '0'  # Disable Triton for compatibility
-                
-                # Set CUDA device order
-                env['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-                env['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'  # Make all GPUs visible
+            # Pipeline parallelism specific environment variables
+            env['VLLM_DISTRIBUTED_EXECUTOR_BACKEND'] = 'mp'  # Use multiprocessing backend
+            env['VLLM_USE_RAY'] = '0'  # Disable Ray for local multiprocessing
+            env['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'  # Use spawn method for multiprocessing
+            env['VLLM_ATTENTION_BACKEND'] = 'XFORMER'  # Use XFormers for better performance
+            env['VLLM_USE_MODELSCOPE'] = '0'  # Disable ModelScope
+            env['VLLM_USE_TRITON'] = '0'  # Disable Triton for compatibility
+            
+            # Set CUDA device order
+            env['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            env['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'  # Make all GPUs visible
         
         # GPU device allocation
         if hasattr(self.config, 'gpu_devices') and self.config.gpu_devices:
@@ -450,7 +446,7 @@ class VLLMServerManager:
                 await asyncio.sleep(check_interval)
                 continue
             
-            # For non-pipeline parallelism, try health check
+            # For tensor parallelism only (PP=1), try health check
             try:
                 # Try to connect to health endpoint
                 response = requests.get(f"{self.base_url}/health", timeout=10)
