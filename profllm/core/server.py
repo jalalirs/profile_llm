@@ -425,27 +425,47 @@ class VLLMServerManager:
         """Wait for server to be ready to accept requests"""
         logger.info("Waiting for vLLM server to be ready...")
 
-        # Give the server a moment to start up before checking health
-        await asyncio.sleep(5.0)
-        
+        # Check if process was created
+        if self.process is None:
+            raise RuntimeError("Cannot wait for server - no process was created")
+
+        # For distributed setups, use longer timeout and less frequent checks
+        total_processes = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
+        if total_processes > 1:
+            timeout = max(timeout, total_processes * 60)  # At least 1 minute per process
+            check_interval = max(check_interval, 5.0)  # Check every 5 seconds for distributed
+            logger.info(f"Distributed setup detected ({total_processes} processes) - using extended timeout: {timeout}s, check interval: {check_interval}s")
+
         start_time = time.time()
         last_error = None
+        check_count = 0
 
         while time.time() - start_time < timeout:
             # Check if process is still running
             if self.process.poll() is not None:
-                # Process has terminated - capture output
+                # Process died - capture output for debugging
                 stdout, stderr = self.process.communicate()
-                raise RuntimeError(f"vLLM server process died. STDOUT: {stdout}, STDERR: {stderr}")
+                exit_code = self.process.returncode
+                error_msg = f"vLLM server process died with exit code {exit_code}"
+
+                if stdout:
+                    logger.error(f"STDOUT: {stdout.decode('utf-8', errors='ignore')}")
+                if stderr:
+                    logger.error(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
+
+                raise RuntimeError(error_msg)
 
             try:
                 # Try to connect to health endpoint
-                response = requests.get(f"{self.base_url}/health", timeout=5)
+                response = requests.get(f"{self.base_url}/health", timeout=10)  # Longer timeout for health check
                 if response.status_code == 200:
                     logger.info("vLLM server is ready")
                     return
             except Exception as e:
                 last_error = str(e)
+                check_count += 1
+                if check_count % 10 == 0:  # Log every 10th failed attempt
+                    logger.info(f"Health check attempt {check_count}: {last_error}")
 
             await asyncio.sleep(check_interval)
 
