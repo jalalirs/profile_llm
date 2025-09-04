@@ -47,7 +47,7 @@ server:
   
   # Model length and batching
   max_model_len: 2048
-  max_num_seqs: ${n_requests}
+  max_num_seqs: *n_requests
   max_num_batched_tokens: 2048  # Auto-calculated
   
   # Scheduling optimizations
