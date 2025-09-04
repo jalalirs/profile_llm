@@ -424,62 +424,28 @@ class VLLMServerManager:
     async def wait_for_ready(self, timeout: int = 300, check_interval: float = 2.0):
         """Wait for server to be ready to accept requests"""
         logger.info("Waiting for vLLM server to be ready...")
-        
-        # Check if process was created
-        if self.process is None:
-            raise RuntimeError("Cannot wait for server - no process was created")
-        
-        # For distributed setups, use longer timeout and less frequent checks
-        total_processes = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
-        if total_processes > 1:
-            timeout = max(timeout, total_processes * 60)  # At least 1 minute per process
-            check_interval = max(check_interval, 5.0)  # Check every 5 seconds for distributed
-            logger.info(f"Distributed setup detected ({total_processes} processes) - using extended timeout: {timeout}s, check interval: {check_interval}s")
-            
-            # Special handling for pipeline parallelism
-            if self.config.pipeline_parallel_size > 1:
-                logger.info(f"Pipeline parallelism detected (PP={self.config.pipeline_parallel_size}) - this requires special coordination")
-                # Pipeline parallelism needs more time for initialization
-                timeout = max(timeout, 600)  # At least 10 minutes for pipeline parallelism
-                check_interval = max(check_interval, 10.0)  # Check every 10 seconds for pipeline parallelism
-                logger.info(f"Pipeline parallelism: extended timeout to {timeout}s, check interval to {check_interval}s")
-            
-        
+
         start_time = time.time()
-        
+        last_error = None
+
         while time.time() - start_time < timeout:
             # Check if process is still running
             if self.process.poll() is not None:
-                # Process died - capture output for debugging
                 stdout, stderr = self.process.communicate()
-                exit_code = self.process.returncode
-                error_msg = f"vLLM server process died with exit code {exit_code}"
-                
-                if stdout:
-                    logger.error(f"STDOUT: {stdout.decode('utf-8', errors='ignore')}")
-                if stderr:
-                    logger.error(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
-                
-                raise RuntimeError(error_msg)
-            
-            # Simple health check to see if server is ready
+                raise RuntimeError(f"vLLM server process died. STDOUT: {stdout}, STDERR: {stderr}")
+
             try:
+                # Try to connect to health endpoint
                 response = requests.get(f"{self.base_url}/health", timeout=5)
                 if response.status_code == 200:
                     logger.info("vLLM server is ready")
                     return
             except Exception as e:
-                # Health check failed, continue waiting
-                # Log the error occasionally for debugging
-                if int(time.time() - start_time) % 30 == 0:  # Log every 30 seconds
-                    logger.info(f"Health check failed: {str(e)[:100]}...")
-            
-            logger.info("Waiting for vLLM server to be ready...")
+                last_error = str(e)
+
             await asyncio.sleep(check_interval)
-        
-        # If we get here, the server should be ready
-        logger.info("vLLM server should be ready now")
-        return
+
+        raise TimeoutError(f"vLLM server did not become ready within {timeout} seconds. Last error: {last_error}")
     
     async def _verify_distributed_processes(self, expected_processes: int):
         """Verify that all expected distributed processes are created"""
