@@ -460,11 +460,14 @@ class ShareGPTDataset(BenchmarkDataset):
         max_loras: Optional[int] = None,
         output_len: Optional[int] = None,
         enable_multimodal_chat: bool = False,
+        min_prompt_length: Optional[int] = None,
         request_id_prefix: str = "",
         **kwargs,
     ) -> list:
         samples: list = []
         ind = 0
+        skipped_short_prompts = 0
+        
         for entry in self.data:
             if len(samples) >= num_requests:
                 break
@@ -479,6 +482,12 @@ class ShareGPTDataset(BenchmarkDataset):
             prompt_ids = tokenizer(prompt).input_ids
             completion_ids = tokenizer(completion).input_ids
             prompt_len = len(prompt_ids)
+            
+            # Filter by minimum prompt length if specified
+            if min_prompt_length is not None and prompt_len < min_prompt_length:
+                skipped_short_prompts += 1
+                continue
+                
             new_output_len = len(completion_ids) if output_len is None else output_len
             if not is_valid_sequence(
                 prompt_len,
@@ -505,6 +514,11 @@ class ShareGPTDataset(BenchmarkDataset):
                 )
             )
             ind += 1
+        
+        # Log sampling statistics
+        if min_prompt_length is not None and skipped_short_prompts > 0:
+            logger.info(f"Skipped {skipped_short_prompts} prompts shorter than {min_prompt_length} tokens")
+        
         self.maybe_oversample_requests(samples, num_requests, request_id_prefix)
         return samples
 

@@ -105,10 +105,18 @@ class BenchmarkClient:
                 random_seed=fixed_seed,
                 dataset_path=self.benchmark_config.dataset_path
             )
+            # Get minimum prompt length for smart sampling
+            min_prompt_length = None
+            if getattr(self.benchmark_config, 'fixed_input_length', None) is not None:
+                min_prompt_length = self.benchmark_config.fixed_input_length
+            elif getattr(self.benchmark_config, 'truncate_input_to', None) is not None:
+                min_prompt_length = self.benchmark_config.truncate_input_to
+            
             requests = dataset.sample(
                 tokenizer=tokenizer,
                 num_requests=self.benchmark_config.num_prompts,
                 output_len=getattr(self.benchmark_config, 'sharegpt_output_len', None),
+                min_prompt_length=min_prompt_length,
                 request_id_prefix="profllm-benchmark"
             )
             
@@ -276,41 +284,32 @@ class BenchmarkClient:
                     req.prompt_len = len(truncated_ids)
                     logger.debug(f"Truncated prompt from {len(prompt_ids)} to {len(truncated_ids)} tokens")
         
-        # Option 3: Pad/truncate to exact length with smart prompt selection
+        # Option 3: Pad/truncate to exact length (smart sampling already handled at dataset level)
         fixed_length = getattr(self.benchmark_config, 'fixed_input_length', None)
         if fixed_length is not None:
             logger.info(f"Setting all inputs to exactly {fixed_length} tokens")
             
-            # First pass: tokenize all prompts and categorize them
-            tokenized_requests = []
             for req in requests:
+                # Tokenize the prompt
                 prompt_ids = tokenizer(req.prompt).input_ids
-                tokenized_requests.append((req, prompt_ids))
-            
-            # Separate into long and short prompts
-            long_prompts = [(req, ids) for req, ids in tokenized_requests if len(ids) >= fixed_length]
-            short_prompts = [(req, ids) for req, ids in tokenized_requests if len(ids) < fixed_length]
-            
-            logger.info(f"Found {len(long_prompts)} prompts >= {fixed_length} tokens, {len(short_prompts)} prompts < {fixed_length} tokens")
-            
-            # Process long prompts first (truncate only)
-            for req, prompt_ids in long_prompts:
-                truncated_ids = prompt_ids[:fixed_length]
-                req.prompt = tokenizer.decode(truncated_ids, skip_special_tokens=True)
-                req.prompt_len = len(truncated_ids)
-                logger.debug(f"Truncated prompt from {len(prompt_ids)} to {len(truncated_ids)} tokens")
-            
-            # Process short prompts (pad only if necessary)
-            if short_prompts:
-                logger.info(f"Padding {len(short_prompts)} short prompts to {fixed_length} tokens")
-                pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id or 0
                 
-                for req, prompt_ids in short_prompts:
+                if len(prompt_ids) > fixed_length:
+                    # Truncate (should be rare since we sampled long prompts)
+                    truncated_ids = prompt_ids[:fixed_length]
+                    req.prompt = tokenizer.decode(truncated_ids, skip_special_tokens=True)
+                    req.prompt_len = len(truncated_ids)
+                    logger.debug(f"Truncated prompt from {len(prompt_ids)} to {len(truncated_ids)} tokens")
+                elif len(prompt_ids) < fixed_length:
+                    # Pad (should be rare since we sampled long prompts)
+                    pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id or 0
                     padding_length = fixed_length - len(prompt_ids)
                     padded_ids = prompt_ids + [pad_token_id] * padding_length
                     req.prompt = tokenizer.decode(padded_ids, skip_special_tokens=True)
                     req.prompt_len = len(padded_ids)
                     logger.debug(f"Padded prompt from {len(prompt_ids)} to {len(padded_ids)} tokens")
+                else:
+                    # Already the right length
+                    req.prompt_len = len(prompt_ids)
         
         return requests
     
