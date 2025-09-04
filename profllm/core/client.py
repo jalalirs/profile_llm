@@ -254,6 +254,12 @@ class BenchmarkClient:
         if hasattr(self.benchmark_config, 'top_k'):
             params['top_k'] = self.benchmark_config.top_k
         
+        if hasattr(self.benchmark_config, 'max_tokens'):
+            params['max_tokens'] = self.benchmark_config.max_tokens
+        
+        if hasattr(self.benchmark_config, 'min_p'):
+            params['min_p'] = self.benchmark_config.min_p
+        
         # Set default temperature if not specified
         if 'temperature' not in params:
             params['temperature'] = 0.0

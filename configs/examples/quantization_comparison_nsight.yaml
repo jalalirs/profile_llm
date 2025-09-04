@@ -30,8 +30,8 @@ server:
   
   # Model length and batching
   max_model_len: 2048
-  max_num_seqs: 64
-  max_num_batched_tokens: null  # Auto-calculated
+  max_num_seqs: 8
+  max_num_batched_tokens: 2048  # Auto-calculated
   
   # Scheduling optimizations
   # enable_chunked_prefill: true
@@ -39,6 +39,7 @@ server:
   # long_prefill_token_threshold: 1024
   #preemption_mode: "recompute"
   scheduling_policy: "fcfs"
+  scheduler_delay_factor: 0.0     # Delay factor for batching
   
   # Performance features
   enforce_eager: false
@@ -62,15 +63,16 @@ benchmark:
   sharegpt_output_len: 256  # Override default output length
   
   # Traffic pattern - moderate load with some burstiness
-  request_rate: 10.0  # 10 requests per second
-  burstiness: 0.8  # Slightly bursty (< 1.0)
-  max_concurrency: 32
+  request_rate: "inf"  # Requests per second ("inf" = unlimited)
+  burstiness: 1  # Traffic burstiness (1.0 = Poisson process)
+  max_concurrency: 4 # Maximum concurrent requests
   
   # Sampling parameters (for consistent results)
   temperature: 0.0  # Greedy decoding
   top_p: 1.0
   top_k: -1
   min_p: 0.0
+  max_tokens: 5
   
   # Request configuration
   use_beam_search: false
