@@ -63,11 +63,12 @@ class VLLMServerManager:
         else:
             logger.warning("No Hugging Face token found - gated models may not be accessible")
         
-        # Set vLLM distributed execution environment variables only for pipeline parallelism
-        if self.config.pipeline_parallel_size > 1:
-            logger.info(f"Setting up environment for pipeline parallelism (PP={self.config.pipeline_parallel_size})")
+        # Set vLLM distributed execution environment variables for ANY multi-GPU setup
+        total_gpus = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
+        if total_gpus > 1:
+            logger.info(f"Setting up environment for distributed execution (TP={self.config.tensor_parallel_size}, PP={self.config.pipeline_parallel_size}, total={total_gpus})")
             
-            # Enable detailed logging for pipeline parallelism
+            # Enable detailed logging for distributed setups
             env['VLLM_LOGGING_LEVEL'] = 'DEBUG'
             env['CUDA_LAUNCH_BLOCKING'] = '1'
             env['NCCL_DEBUG'] = 'TRACE'
@@ -78,25 +79,35 @@ class VLLMServerManager:
             env['NCCL_SOCKET_IFNAME'] = 'lo'  # Use loopback interface for localhost
             env['GLOO_SOCKET_IFNAME'] = 'lo'
             
-            # Pipeline parallelism specific environment variables
-            env['VLLM_DISTRIBUTED_EXECUTOR_BACKEND'] = 'mp'  # Use multiprocessing backend
-            env['VLLM_USE_RAY'] = '0'  # Disable Ray for local multiprocessing
-            env['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'  # Use spawn method for multiprocessing
-            env['VLLM_ATTENTION_BACKEND'] = 'XFORMER'  # Use XFormers for better performance
-            env['VLLM_USE_MODELSCOPE'] = '0'  # Disable ModelScope
-            env['VLLM_USE_TRITON'] = '0'  # Disable Triton for compatibility
-            
             # Set CUDA device order
             env['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-            env['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'  # Make all GPUs visible
+            
+            # Set CUDA devices consistently - this must be done BEFORE the GPU device allocation below
+            if hasattr(self.config, 'gpu_devices') and self.config.gpu_devices:
+                env['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, self.config.gpu_devices))
+                logger.info(f"Using specified GPU devices: {env['CUDA_VISIBLE_DEVICES']}")
+            else:
+                env['CUDA_VISIBLE_DEVICES'] = ','.join(str(i) for i in range(total_gpus))
+                logger.info(f"Using sequential GPU devices: {env['CUDA_VISIBLE_DEVICES']}")
+            
+            # Pipeline parallelism specific environment variables
+            if self.config.pipeline_parallel_size > 1:
+                logger.info(f"Setting up pipeline parallelism specific environment (PP={self.config.pipeline_parallel_size})")
+                env['VLLM_DISTRIBUTED_EXECUTOR_BACKEND'] = 'mp'  # Use multiprocessing backend
+                env['VLLM_USE_RAY'] = '0'  # Disable Ray for local multiprocessing
+                env['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'  # Use spawn method for multiprocessing
+                env['VLLM_ATTENTION_BACKEND'] = 'XFORMER'  # Use XFormers for better performance
+                env['VLLM_USE_MODELSCOPE'] = '0'  # Disable ModelScope
+                env['VLLM_USE_TRITON'] = '0'  # Disable Triton for compatibility
         
-        # GPU device allocation
-        if hasattr(self.config, 'gpu_devices') and self.config.gpu_devices:
-            env['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, self.config.gpu_devices))
-        elif self.config.tensor_parallel_size > 1:
-            # Auto-allocate GPUs for tensor parallelism
-            gpu_devices = await allocate_gpu_devices(self.config.tensor_parallel_size)
-            env['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, gpu_devices))
+        # GPU device allocation (only if not already set above for distributed setups)
+        if total_gpus <= 1:
+            if hasattr(self.config, 'gpu_devices') and self.config.gpu_devices:
+                env['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, self.config.gpu_devices))
+            elif self.config.tensor_parallel_size > 1:
+                # Auto-allocate GPUs for tensor parallelism
+                gpu_devices = await allocate_gpu_devices(self.config.tensor_parallel_size)
+                env['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, gpu_devices))
         
         # Profiling environment - enable if configured or if experiment profile dir is set
         profiling_enabled = False
@@ -264,6 +275,15 @@ class VLLMServerManager:
         logger.info(f"Starting vLLM server with command: {' '.join(cmd)}")
         logger.info(f"Working directory: {os.getcwd()}")
         logger.info(f"Environment variables count: {len(env)}")
+        
+        # Log critical environment variables for debugging
+        logger.info("Critical environment variables for vLLM:")
+        critical_vars = ['CUDA_VISIBLE_DEVICES', 'VLLM_LOGGING_LEVEL', 'VLLM_DISTRIBUTED_EXECUTOR_BACKEND', 
+                        'VLLM_USE_RAY', 'VLLM_WORKER_MULTIPROC_METHOD', 'VLLM_ATTENTION_BACKEND',
+                        'NCCL_DEBUG', 'VLLM_TRACE_FUNCTION', 'VLLM_HOST_IP', 'NCCL_SOCKET_IFNAME']
+        for var in critical_vars:
+            if var in env:
+                logger.info(f"  {var}={env[var]}")
         
         # Debug: Log profiling setup
         if 'VLLM_TORCH_PROFILER_DIR' in env:
@@ -442,8 +462,9 @@ class VLLMServerManager:
             
             # Try health check for all configurations
             try:
-                # Try to connect to health endpoint
-                response = requests.get(f"{self.base_url}/health", timeout=10)
+                # For pipeline parallelism, use longer timeout for health checks
+                health_timeout = 30 if self.config.pipeline_parallel_size > 1 else 10
+                response = requests.get(f"{self.base_url}/health", timeout=health_timeout)
                 if response.status_code == 200:
                     logger.info("vLLM server is ready")
                     return
@@ -453,7 +474,7 @@ class VLLMServerManager:
                 
                 # For pipeline parallelism, be more patient and log less frequently
                 if self.config.pipeline_parallel_size > 1:
-                    if check_count % 20 == 0:  # Log every 20th failed attempt for pipeline parallelism
+                    if check_count % 5 == 0:  # Log every 5th failed attempt for pipeline parallelism
                         logger.info(f"Pipeline parallelism health check attempt {check_count}: {last_error}")
                         
                         # Additional debugging for pipeline parallelism
@@ -466,6 +487,8 @@ class VLLMServerManager:
                                 logger.info(f"GPU processes: {len(gpu_processes)} processes found")
                                 for proc in gpu_processes[:3]:  # Show first 3 processes
                                     logger.info(f"  GPU process: {proc}")
+                            else:
+                                logger.info("No GPU processes found yet")
                         except Exception as gpu_debug_error:
                             logger.debug(f"GPU process debugging failed: {gpu_debug_error}")
                 else:
@@ -475,6 +498,25 @@ class VLLMServerManager:
             await asyncio.sleep(check_interval)
         
         raise TimeoutError(f"vLLM server did not become ready within {timeout} seconds. Last error: {last_error}")
+    
+    async def _verify_distributed_processes(self, expected_processes: int):
+        """Verify that all expected distributed processes are created"""
+        try:
+            import subprocess
+            result = subprocess.run(['nvidia-smi', '--query-compute-apps=pid,process_name', '--format=csv,noheader,nounits'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                gpu_processes = result.stdout.strip().split('\n')
+                logger.info(f"Found {len(gpu_processes)} GPU processes (expected {expected_processes})")
+                for proc in gpu_processes:
+                    logger.info(f"  GPU process: {proc}")
+                return len(gpu_processes) >= expected_processes
+            else:
+                logger.info("No GPU processes found yet")
+                return False
+        except Exception as e:
+            logger.debug(f"Process verification failed: {e}")
+            return False
     
     async def stop(self):
         """Stop the vLLM server"""
