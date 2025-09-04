@@ -330,6 +330,10 @@ class VLLMServerManager:
             total_processes = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
             startup_delay = max(5.0, total_processes * 2.0)  # At least 5 seconds, or 2 seconds per process
             
+            # Extra delay for pipeline parallelism
+            if self.config.pipeline_parallel_size > 1:
+                startup_delay = max(startup_delay, 30.0)  # At least 30 seconds for pipeline parallelism
+            
             logger.info(f"Waiting for vLLM server process to stabilize...")
             logger.info(f"Distributed setup: TP={self.config.tensor_parallel_size}, PP={self.config.pipeline_parallel_size} ({total_processes} total processes)")
             logger.info(f"Startup delay: {startup_delay} seconds")
@@ -466,7 +470,9 @@ class VLLMServerManager:
                     return
             except Exception as e:
                 # Health check failed, continue waiting
-                pass
+                # Log the error occasionally for debugging
+                if int(time.time() - start_time) % 30 == 0:  # Log every 30 seconds
+                    logger.info(f"Health check failed: {str(e)[:100]}...")
             
             logger.info("Waiting for vLLM server to be ready...")
             await asyncio.sleep(check_interval)
