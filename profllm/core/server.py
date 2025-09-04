@@ -63,6 +63,27 @@ class VLLMServerManager:
         else:
             logger.warning("No Hugging Face token found - gated models may not be accessible")
         
+        # Set vLLM distributed execution environment variables for pipeline parallelism
+        total_processes = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
+        if total_processes > 1:
+            # Enable detailed logging for distributed setups
+            env['VLLM_LOGGING_LEVEL'] = 'DEBUG'
+            env['CUDA_LAUNCH_BLOCKING'] = '1'
+            env['NCCL_DEBUG'] = 'TRACE'
+            env['VLLM_TRACE_FUNCTION'] = '1'
+            
+            # Set network configuration for distributed communication
+            env['VLLM_HOST_IP'] = '127.0.0.1'
+            env['NCCL_SOCKET_IFNAME'] = 'lo'  # Use loopback interface for localhost
+            env['GLOO_SOCKET_IFNAME'] = 'lo'
+            
+            # Special handling for pipeline parallelism
+            if self.config.pipeline_parallel_size > 1:
+                logger.info(f"Setting up environment for pipeline parallelism (PP={self.config.pipeline_parallel_size})")
+                # Pipeline parallelism may need additional environment variables
+                env['VLLM_DISTRIBUTED_EXECUTOR_BACKEND'] = 'mp'  # Use multiprocessing backend
+                env['VLLM_USE_RAY'] = '0'  # Disable Ray for local multiprocessing
+        
         # GPU device allocation
         if hasattr(self.config, 'gpu_devices') and self.config.gpu_devices:
             env['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, self.config.gpu_devices))
