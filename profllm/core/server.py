@@ -425,12 +425,16 @@ class VLLMServerManager:
         """Wait for server to be ready to accept requests"""
         logger.info("Waiting for vLLM server to be ready...")
 
+        # Give the server a moment to start up before checking health
+        await asyncio.sleep(5.0)
+        
         start_time = time.time()
         last_error = None
 
         while time.time() - start_time < timeout:
             # Check if process is still running
             if self.process.poll() is not None:
+                # Process has terminated - capture output
                 stdout, stderr = self.process.communicate()
                 raise RuntimeError(f"vLLM server process died. STDOUT: {stdout}, STDERR: {stderr}")
 
