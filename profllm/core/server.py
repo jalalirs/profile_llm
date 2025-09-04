@@ -96,7 +96,7 @@ class VLLMServerManager:
                 env['VLLM_DISTRIBUTED_EXECUTOR_BACKEND'] = 'mp'  # Use multiprocessing backend
                 env['VLLM_USE_RAY'] = '0'  # Disable Ray for local multiprocessing
                 env['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'  # Use spawn method for multiprocessing
-                env['VLLM_ATTENTION_BACKEND'] = 'XFORMER'  # Use XFormers for better performance
+                env['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'  # Use XFormers for better performance
                 env['VLLM_USE_MODELSCOPE'] = '0'  # Disable ModelScope
                 env['VLLM_USE_TRITON'] = '0'  # Disable Triton for compatibility
         
