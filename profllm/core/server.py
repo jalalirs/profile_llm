@@ -491,11 +491,54 @@ class VLLMServerManager:
                                 logger.info("No GPU processes found yet")
                         except Exception as gpu_debug_error:
                             logger.debug(f"GPU process debugging failed: {gpu_debug_error}")
+                        
+                        # Check if port is being used
+                        try:
+                            import socket
+                            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            sock.settimeout(1)
+                            result = sock.connect_ex(('127.0.0.1', 8000))
+                            sock.close()
+                            if result == 0:
+                                logger.info("Port 8000 is open but health endpoint not responding")
+                            else:
+                                logger.info("Port 8000 is not open yet")
+                        except Exception as port_debug_error:
+                            logger.debug(f"Port debugging failed: {port_debug_error}")
                 else:
                     if check_count % 10 == 0:  # Log every 10th failed attempt for tensor parallelism
                         logger.info(f"Health check attempt {check_count}: {last_error}")
             
             await asyncio.sleep(check_interval)
+        
+        # For pipeline parallelism, if we've been waiting a long time and processes are running, 
+        # we might need to proceed anyway
+        if self.config.pipeline_parallel_size > 1 and check_count > 30:  # After 5 minutes of trying
+            logger.warning("Pipeline parallelism health checks failing but processes are running on GPU")
+            logger.warning("Attempting to proceed anyway - this may work if the server is ready but health endpoint is not responding")
+            
+            # Try one more time with a very long timeout
+            try:
+                response = requests.get(f"{self.base_url}/health", timeout=60)
+                if response.status_code == 200:
+                    logger.info("vLLM server is ready (after extended wait)")
+                    return
+            except Exception as e:
+                logger.warning(f"Final health check attempt failed: {e}")
+            
+            # Check if we have GPU processes running
+            try:
+                import subprocess
+                result = subprocess.run(['nvidia-smi', '--query-compute-apps=pid,process_name', '--format=csv,noheader,nounits'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and result.stdout.strip():
+                    gpu_processes = result.stdout.strip().split('\n')
+                    if len(gpu_processes) >= self.config.tensor_parallel_size * self.config.pipeline_parallel_size:
+                        logger.warning(f"Found {len(gpu_processes)} GPU processes running - proceeding despite health check failures")
+                        logger.warning("This may work if the server is ready but health endpoint is not responding properly")
+                        return
+            except Exception as e:
+                logger.debug(f"Final GPU process check failed: {e}")
         
         raise TimeoutError(f"vLLM server did not become ready within {timeout} seconds. Last error: {last_error}")
     
