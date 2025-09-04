@@ -112,6 +112,9 @@ class BenchmarkClient:
                 request_id_prefix="profllm-benchmark"
             )
             
+            # Apply input consistency options
+            requests = self._apply_input_consistency(requests, tokenizer)
+            
             # Log prompt information
             self._log_prompt_info(requests)
             return requests
@@ -133,6 +136,9 @@ class BenchmarkClient:
                 range_ratio=0.0,
                 request_id_prefix="profllm-benchmark"
             )
+            
+            # Apply input consistency options
+            requests = self._apply_input_consistency(requests, tokenizer)
             
             # Log prompt information
             self._log_prompt_info(requests)
@@ -240,6 +246,63 @@ class BenchmarkClient:
             logger.info(f"  ... and {len(requests) - 3} more prompts")
         
         logger.info("=" * 60)
+    
+    def _apply_input_consistency(self, requests: list, tokenizer) -> list:
+        """Apply input consistency options to requests"""
+        if not requests:
+            return requests
+        
+        # Option 1: Use the same prompt for all requests
+        if getattr(self.benchmark_config, 'use_same_prompt', False):
+            logger.info("Using the same prompt for all requests")
+            base_request = requests[0]
+            for i, req in enumerate(requests):
+                req.prompt = base_request.prompt
+                req.prompt_len = base_request.prompt_len
+                req.request_id = f"profllm-benchmark-{i}"
+        
+        # Option 2: Truncate inputs to a specific length
+        truncate_to = getattr(self.benchmark_config, 'truncate_input_to', None)
+        if truncate_to is not None:
+            logger.info(f"Truncating all inputs to {truncate_to} tokens")
+            for req in requests:
+                # Tokenize the prompt
+                prompt_ids = tokenizer(req.prompt).input_ids
+                
+                # Truncate if longer than target
+                if len(prompt_ids) > truncate_to:
+                    truncated_ids = prompt_ids[:truncate_to]
+                    req.prompt = tokenizer.decode(truncated_ids, skip_special_tokens=True)
+                    req.prompt_len = len(truncated_ids)
+                    logger.debug(f"Truncated prompt from {len(prompt_ids)} to {len(truncated_ids)} tokens")
+        
+        # Option 3: Pad/truncate to exact length
+        fixed_length = getattr(self.benchmark_config, 'fixed_input_length', None)
+        if fixed_length is not None:
+            logger.info(f"Setting all inputs to exactly {fixed_length} tokens")
+            for req in requests:
+                # Tokenize the prompt
+                prompt_ids = tokenizer(req.prompt).input_ids
+                
+                if len(prompt_ids) > fixed_length:
+                    # Truncate
+                    truncated_ids = prompt_ids[:fixed_length]
+                    req.prompt = tokenizer.decode(truncated_ids, skip_special_tokens=True)
+                    req.prompt_len = len(truncated_ids)
+                    logger.debug(f"Truncated prompt from {len(prompt_ids)} to {len(truncated_ids)} tokens")
+                elif len(prompt_ids) < fixed_length:
+                    # Pad with a simple padding token (usually pad_token_id or eos_token_id)
+                    pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id or 0
+                    padding_length = fixed_length - len(prompt_ids)
+                    padded_ids = prompt_ids + [pad_token_id] * padding_length
+                    req.prompt = tokenizer.decode(padded_ids, skip_special_tokens=True)
+                    req.prompt_len = len(padded_ids)
+                    logger.debug(f"Padded prompt from {len(prompt_ids)} to {len(padded_ids)} tokens")
+                else:
+                    # Already the right length
+                    req.prompt_len = len(prompt_ids)
+        
+        return requests
     
     def _get_sampling_params(self) -> dict:
         """Get sampling parameters for the benchmark"""

@@ -4,6 +4,7 @@ suite: "quantization_analysis_nsight"
 name: "FP8 vs BF16 Performance Comparison with Nsight Profiling"
 description: "Compare quantized vs full precision inference with detailed CUDA profiling"
 tags: ["quantization", "memory", "efficiency", "nsight", "cuda", "profiling"]
+n_requests: &n_requests 4
 
 # Server Configuration - covers key vLLM parameters
 server:
@@ -30,7 +31,7 @@ server:
   
   # Model length and batching
   max_model_len: 2048
-  max_num_seqs: 8
+  max_num_seqs: ${n_requests}
   max_num_batched_tokens: 2048  # Auto-calculated
   
   # Scheduling optimizations
@@ -59,13 +60,13 @@ benchmark:
   # Dataset configuration
   dataset_name: "sharegpt"
   dataset_path: null  # Use default ShareGPT dataset
-  num_prompts: 5
-  sharegpt_output_len: 256  # Override default output length
+  num_prompts: *n_requests
+  sharegpt_output_len: 5  # Override default output length
   
   # Traffic pattern - moderate load with some burstiness
   request_rate: "inf"  # Requests per second ("inf" = unlimited)
   burstiness: 1  # Traffic burstiness (1.0 = Poisson process)
-  max_concurrency: 4 # Maximum concurrent requests
+  max_concurrency: *n_requests # Maximum concurrent requests
   
   # Sampling parameters (for consistent results)
   temperature: 0.0  # Greedy decoding
@@ -78,6 +79,10 @@ benchmark:
   use_beam_search: false
   logprobs: null
   ignore_eos: false
+  
+  # Input consistency options
+  use_same_prompt: true  # Use the same prompt for all requests
+  fixed_input_length: 512  # Set all inputs to exactly 512 tokens
   
   # Metrics and analysis
   percentile_metrics: "ttft,tpot,itl,e2el"
