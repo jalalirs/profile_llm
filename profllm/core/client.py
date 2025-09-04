@@ -276,31 +276,41 @@ class BenchmarkClient:
                     req.prompt_len = len(truncated_ids)
                     logger.debug(f"Truncated prompt from {len(prompt_ids)} to {len(truncated_ids)} tokens")
         
-        # Option 3: Pad/truncate to exact length
+        # Option 3: Pad/truncate to exact length with smart prompt selection
         fixed_length = getattr(self.benchmark_config, 'fixed_input_length', None)
         if fixed_length is not None:
             logger.info(f"Setting all inputs to exactly {fixed_length} tokens")
+            
+            # First pass: tokenize all prompts and categorize them
+            tokenized_requests = []
             for req in requests:
-                # Tokenize the prompt
                 prompt_ids = tokenizer(req.prompt).input_ids
+                tokenized_requests.append((req, prompt_ids))
+            
+            # Separate into long and short prompts
+            long_prompts = [(req, ids) for req, ids in tokenized_requests if len(ids) >= fixed_length]
+            short_prompts = [(req, ids) for req, ids in tokenized_requests if len(ids) < fixed_length]
+            
+            logger.info(f"Found {len(long_prompts)} prompts >= {fixed_length} tokens, {len(short_prompts)} prompts < {fixed_length} tokens")
+            
+            # Process long prompts first (truncate only)
+            for req, prompt_ids in long_prompts:
+                truncated_ids = prompt_ids[:fixed_length]
+                req.prompt = tokenizer.decode(truncated_ids, skip_special_tokens=True)
+                req.prompt_len = len(truncated_ids)
+                logger.debug(f"Truncated prompt from {len(prompt_ids)} to {len(truncated_ids)} tokens")
+            
+            # Process short prompts (pad only if necessary)
+            if short_prompts:
+                logger.info(f"Padding {len(short_prompts)} short prompts to {fixed_length} tokens")
+                pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id or 0
                 
-                if len(prompt_ids) > fixed_length:
-                    # Truncate
-                    truncated_ids = prompt_ids[:fixed_length]
-                    req.prompt = tokenizer.decode(truncated_ids, skip_special_tokens=True)
-                    req.prompt_len = len(truncated_ids)
-                    logger.debug(f"Truncated prompt from {len(prompt_ids)} to {len(truncated_ids)} tokens")
-                elif len(prompt_ids) < fixed_length:
-                    # Pad with a simple padding token (usually pad_token_id or eos_token_id)
-                    pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id or 0
+                for req, prompt_ids in short_prompts:
                     padding_length = fixed_length - len(prompt_ids)
                     padded_ids = prompt_ids + [pad_token_id] * padding_length
                     req.prompt = tokenizer.decode(padded_ids, skip_special_tokens=True)
                     req.prompt_len = len(padded_ids)
                     logger.debug(f"Padded prompt from {len(prompt_ids)} to {len(padded_ids)} tokens")
-                else:
-                    # Already the right length
-                    req.prompt_len = len(prompt_ids)
         
         return requests
     

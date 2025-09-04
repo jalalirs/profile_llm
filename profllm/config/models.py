@@ -242,6 +242,7 @@ class BenchmarkConfig(BaseModel):
     use_same_prompt: bool = False  # Use the same prompt for all requests
     truncate_input_to: Optional[int] = None  # Truncate all inputs to this token length
     fixed_input_length: Optional[int] = None  # Pad/truncate to exact length
+    prefer_truncation: bool = True  # Prefer truncating long prompts over padding short ones
     
     # Metrics and analysis
     percentile_metrics: str = "ttft,tpot"  # Comma-separated metrics for percentile analysis

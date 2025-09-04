@@ -81,8 +81,9 @@ benchmark:
   ignore_eos: false
   
   # Input consistency options
-  use_same_prompt: true  # Use the same prompt for all requests
-  fixed_input_length: 512  # Set all inputs to exactly 512 tokens
+  use_same_prompt: false  # Use different prompts for variety
+  fixed_input_length: 512  # Set all inputs to exactly 512 tokens (truncate/pad as needed)
+  prefer_truncation: true  # Prefer truncating long prompts over padding short ones
   
   # Metrics and analysis
   percentile_metrics: "ttft,tpot,itl,e2el"
