@@ -424,29 +424,6 @@ class VLLMServerManager:
                 check_interval = max(check_interval, 10.0)  # Check every 10 seconds for pipeline parallelism
                 logger.info(f"Pipeline parallelism: extended timeout to {timeout}s, check interval to {check_interval}s")
             
-            # For distributed setups, also check if we can see the expected number of vLLM processes
-            try:
-                import psutil
-                all_processes = psutil.process_iter(['pid', 'name', 'cmdline'])
-                vllm_processes = []
-                for proc in all_processes:
-                    try:
-                        if proc.info['cmdline'] and any('vllm.entrypoints.openai.api_server' in arg for arg in proc.info['cmdline']):
-                            vllm_processes.append(proc.info)
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-                
-                logger.info(f"Currently found {len(vllm_processes)} vLLM server processes (expected: {total_processes})")
-                if len(vllm_processes) < total_processes:
-                    logger.warning(f"⚠ Only {len(vllm_processes)} vLLM processes found, expected {total_processes}")
-                    
-                    # Special debugging for pipeline parallelism
-                    if self.config.pipeline_parallel_size > 1:
-                        logger.warning(f"Pipeline parallelism issue: PP={self.config.pipeline_parallel_size}, TP={self.config.tensor_parallel_size}")
-                        logger.warning(f"This suggests pipeline stages are not being created properly")
-                        logger.warning(f"Expected: {self.config.pipeline_parallel_size} pipeline stages × {self.config.tensor_parallel_size} workers = {total_processes} processes")
-            except Exception as e:
-                logger.warning(f"Could not check vLLM processes: {e}")
         
         start_time = time.time()
         last_error = None
@@ -467,30 +444,16 @@ class VLLMServerManager:
                 
                 raise RuntimeError(error_msg)
             
-            # For pipeline parallelism, also check if GPU processes are being spawned
+            # For pipeline parallelism, just wait without health checks
             if self.config.pipeline_parallel_size > 1:
-                try:
-                    # Check for GPU processes using nvidia-smi
-                    import subprocess
-                    result = subprocess.run(['nvidia-smi', '--query-compute-apps=pid,process_name', '--format=csv,noheader,nounits'], 
-                                          capture_output=True, text=True, timeout=5)
-                    if result.returncode == 0:
-                        gpu_processes = result.stdout.strip().split('\n') if result.stdout.strip() else []
-                        logger.info(f"GPU processes found: {len(gpu_processes)}")
-                        for i, proc in enumerate(gpu_processes):
-                            logger.info(f"  GPU Process {i+1}: {proc}")
-                        
-                        if len(gpu_processes) == 0:
-                            logger.warning(f"⚠ No GPU processes found for pipeline parallelism (PP={self.config.pipeline_parallel_size})")
-                            logger.warning(f"This suggests vLLM is not spawning GPU workers properly")
-                    else:
-                        logger.warning(f"Could not check GPU processes: {result.stderr}")
-                except Exception as e:
-                    logger.warning(f"Could not check GPU processes: {e}")
+                logger.info(f"Pipeline parallelism: waiting for initialization (no health checks)")
+                await asyncio.sleep(check_interval)
+                continue
             
+            # For non-pipeline parallelism, try health check
             try:
                 # Try to connect to health endpoint
-                response = requests.get(f"{self.base_url}/health", timeout=10)  # Longer timeout for health check
+                response = requests.get(f"{self.base_url}/health", timeout=10)
                 if response.status_code == 200:
                     logger.info("vLLM server is ready")
                     return
@@ -499,25 +462,6 @@ class VLLMServerManager:
                 check_count += 1
                 if check_count % 10 == 0:  # Log every 10th failed attempt
                     logger.info(f"Health check attempt {check_count}: {last_error}")
-                    
-                    # For distributed setups, also check if we can see the expected number of vLLM processes
-                    if total_processes > 1:
-                        try:
-                            import psutil
-                            all_processes = psutil.process_iter(['pid', 'name', 'cmdline'])
-                            vllm_processes = []
-                            for proc in all_processes:
-                                try:
-                                    if proc.info['cmdline'] and any('vllm.entrypoints.openai.api_server' in arg for arg in proc.info['cmdline']):
-                                        vllm_processes.append(proc.info)
-                                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                    continue
-                            
-                            logger.info(f"Health check {check_count}: Found {len(vllm_processes)} vLLM server processes (expected: {total_processes})")
-                            if len(vllm_processes) < total_processes:
-                                logger.warning(f"⚠ Health check {check_count}: Only {len(vllm_processes)} vLLM processes found, expected {total_processes}")
-                        except Exception as e:
-                            logger.warning(f"Could not check vLLM processes during health check: {e}")
             
             await asyncio.sleep(check_interval)
         
