@@ -251,18 +251,39 @@ class VLLMServerManager:
             raise RuntimeError("vLLM module not available")
         
         try:
-            # Use shell=False for better environment variable inheritance
+            # For distributed setups, use shell=True to better handle process groups
+            total_processes = self.config.tensor_parallel_size * self.config.pipeline_parallel_size
+            use_shell = total_processes > 1
+            
+            if use_shell:
+                logger.info(f"Distributed setup detected ({total_processes} processes) - using shell=True for better process group handling")
+                # Convert command list to shell string
+                cmd_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in cmd)
+                logger.info(f"Shell command: {cmd_str}")
+            else:
+                logger.info("Single process setup - using shell=False")
+                cmd_str = cmd
+            
             logger.info("Creating subprocess...")
             self.process = subprocess.Popen(
-                cmd,
-                shell=False,
+                cmd_str,
+                shell=use_shell,
                 env=env,
                 stdout=subprocess.PIPE,  # Capture stdout for debugging
                 stderr=subprocess.PIPE,  # Capture stderr for debugging
+                preexec_fn=None if use_shell else os.setsid,  # Create new process group for non-shell
             )
             
             logger.info(f"Subprocess created successfully with PID {self.process.pid}")
             logger.info(f"Server will be available at {self.base_url}")
+            
+            # Debug: Log process group info for distributed setups
+            if use_shell:
+                try:
+                    pgid = os.getpgid(self.process.pid)
+                    logger.info(f"Process group ID: {pgid}")
+                except Exception as e:
+                    logger.warning(f"Could not get process group ID: {e}")
             
             # Debug: Verify environment variable is set in subprocess
             if 'VLLM_TORCH_PROFILER_DIR' in env:
@@ -300,6 +321,21 @@ class VLLMServerManager:
                     logger.error(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
                 
                 raise RuntimeError(error_msg)
+            
+            # For distributed setups, also check if we can see child processes
+            if use_shell:
+                try:
+                    # Try to get child processes
+                    import psutil
+                    parent = psutil.Process(self.process.pid)
+                    children = parent.children(recursive=True)
+                    logger.info(f"Found {len(children)} child processes")
+                    for i, child in enumerate(children):
+                        logger.info(f"  Child {i+1}: PID {child.pid}, name: {child.name()}")
+                except ImportError:
+                    logger.info("psutil not available - cannot check child processes")
+                except Exception as e:
+                    logger.warning(f"Could not check child processes: {e}")
             
             logger.info("✓ vLLM server process is stable and running")
             
