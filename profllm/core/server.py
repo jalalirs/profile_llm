@@ -332,6 +332,21 @@ class VLLMServerManager:
                     logger.info(f"Found {len(children)} child processes")
                     for i, child in enumerate(children):
                         logger.info(f"  Child {i+1}: PID {child.pid}, name: {child.name()}")
+                        
+                    # Check if we can find the actual vLLM Python processes
+                    all_processes = psutil.process_iter(['pid', 'name', 'cmdline'])
+                    vllm_processes = []
+                    for proc in all_processes:
+                        try:
+                            if proc.info['cmdline'] and any('vllm.entrypoints.openai.api_server' in arg for arg in proc.info['cmdline']):
+                                vllm_processes.append(proc.info)
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                    
+                    logger.info(f"Found {len(vllm_processes)} vLLM server processes:")
+                    for i, proc in enumerate(vllm_processes):
+                        logger.info(f"  vLLM {i+1}: PID {proc['pid']}, name: {proc['name']}")
+                        
                 except ImportError:
                     logger.info("psutil not available - cannot check child processes")
                 except Exception as e:
@@ -390,6 +405,24 @@ class VLLMServerManager:
             timeout = max(timeout, total_processes * 60)  # At least 1 minute per process
             check_interval = max(check_interval, 5.0)  # Check every 5 seconds for distributed
             logger.info(f"Distributed setup detected ({total_processes} processes) - using extended timeout: {timeout}s, check interval: {check_interval}s")
+            
+            # For distributed setups, also check if we can see the expected number of vLLM processes
+            try:
+                import psutil
+                all_processes = psutil.process_iter(['pid', 'name', 'cmdline'])
+                vllm_processes = []
+                for proc in all_processes:
+                    try:
+                        if proc.info['cmdline'] and any('vllm.entrypoints.openai.api_server' in arg for arg in proc.info['cmdline']):
+                            vllm_processes.append(proc.info)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                logger.info(f"Currently found {len(vllm_processes)} vLLM server processes (expected: {total_processes})")
+                if len(vllm_processes) < total_processes:
+                    logger.warning(f"⚠ Only {len(vllm_processes)} vLLM processes found, expected {total_processes}")
+            except Exception as e:
+                logger.warning(f"Could not check vLLM processes: {e}")
         
         start_time = time.time()
         last_error = None
@@ -421,6 +454,25 @@ class VLLMServerManager:
                 check_count += 1
                 if check_count % 10 == 0:  # Log every 10th failed attempt
                     logger.info(f"Health check attempt {check_count}: {last_error}")
+                    
+                    # For distributed setups, also check if we can see the expected number of vLLM processes
+                    if total_processes > 1:
+                        try:
+                            import psutil
+                            all_processes = psutil.process_iter(['pid', 'name', 'cmdline'])
+                            vllm_processes = []
+                            for proc in all_processes:
+                                try:
+                                    if proc.info['cmdline'] and any('vllm.entrypoints.openai.api_server' in arg for arg in proc.info['cmdline']):
+                                        vllm_processes.append(proc.info)
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    continue
+                            
+                            logger.info(f"Health check {check_count}: Found {len(vllm_processes)} vLLM server processes (expected: {total_processes})")
+                            if len(vllm_processes) < total_processes:
+                                logger.warning(f"⚠ Health check {check_count}: Only {len(vllm_processes)} vLLM processes found, expected {total_processes}")
+                        except Exception as e:
+                            logger.warning(f"Could not check vLLM processes during health check: {e}")
             
             await asyncio.sleep(check_interval)
         
